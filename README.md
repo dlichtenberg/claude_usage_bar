@@ -6,15 +6,6 @@ A macOS menu bar app that displays your Claude Pro/Max usage limits. Available a
 
 <img width="277" height="273" alt="image" src="https://github.com/user-attachments/assets/71d950ee-7bc6-4900-abd6-1fcc15164eda" />
 
-
-## Features
-
-- Shows session (5-hour) and weekly usage as progress bars
-- Color-coded indicators: green, amber, and red based on utilization
-- Displays time until each limit resets
-- Shows extra usage spend if enabled on your account
-- Auto-refreshes every 5 minutes
-
 ## Requirements
 
 - macOS
