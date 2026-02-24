@@ -1,6 +1,6 @@
 # Claude Usage Bar
 
-A macOS menu bar app that displays your Claude Pro/Max usage limits. Available as a **standalone app** (via `rumps`) or as a **SwiftBar plugin**.
+A macOS menu bar app that displays your Claude Pro/Max usage limits. Available as a **standalone app** or as a **SwiftBar plugin**.
 
 ![menu bar screenshot](https://img.shields.io/badge/macOS-menu%20bar-blue)
 
@@ -19,8 +19,6 @@ A macOS menu bar app that displays your Claude Pro/Max usage limits. Available a
 - An active Claude Pro or Max subscription with [Claude Code](https://docs.anthropic.com/en/docs/claude-code) credentials in the macOS Keychain
 
 ## Standalone App (Recommended)
-
-No SwiftBar needed — runs as a native macOS menu bar app.
 
 ### Install and run
 
