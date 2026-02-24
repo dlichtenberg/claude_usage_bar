@@ -3,6 +3,7 @@
 import threading
 
 import rumps
+from PyObjCTools import AppHelper
 
 from claude_usage.core import (
     get_access_token,
@@ -57,7 +58,6 @@ class ClaudeUsageApp(rumps.App):
         self._extra_header._menuitem.setHidden_(True)
         self._extra_bar._menuitem.setHidden_(True)
 
-        self._pending = None
         self._fetching = False
 
         # Periodic refresh timer
@@ -90,34 +90,30 @@ class ClaudeUsageApp(rumps.App):
     def _fetch_bg(self):
         """Run all blocking work (keychain, HTTP, subprocess) off the main thread."""
         data, err = None, None
+        try:
+            token = get_access_token()
+            if not token:
+                err = "No keychain credentials"
+            else:
+                data, err = fetch_usage(token)
 
-        token = get_access_token()
-        if not token:
-            err = "No keychain credentials"
-        else:
-            data, err = fetch_usage(token)
+                # If token expired, try refreshing and retry once
+                if err == "auth_expired":
+                    if trigger_claude_refresh():
+                        token = get_access_token()
+                        if token:
+                            data, err = fetch_usage(token)
+        except Exception as e:
+            data, err = None, f"{type(e).__name__}: {e}"
 
-            # If token expired, try refreshing and retry once
-            if err == "auth_expired":
-                if trigger_claude_refresh():
-                    token = get_access_token()
-                    if token:
-                        data, err = fetch_usage(token)
+        # Dispatch UI update to the main run-loop thread
+        AppHelper.callAfter(self._apply_result, data, err)
 
-        self._pending = (data, err)
-        # Schedule UI update on the main run-loop thread via a 0-delay timer
-        self._apply_timer = rumps.Timer(self._apply_result, 0)
-        self._apply_timer.start()
-
-    def _apply_result(self, _sender):
-        """Apply fetched data to the UI (runs on main thread via timer)."""
-        self._apply_timer.stop()
+    def _apply_result(self, data, err):
+        """Apply fetched data to the UI (runs on main thread via callAfter)."""
         self._fetching = False
 
         try:
-            data, err = self._pending
-            self._pending = None
-
             if err:
                 if err == "auth_expired":
                     self._show_error("Token expired \u2014 open Claude Code to re-auth")

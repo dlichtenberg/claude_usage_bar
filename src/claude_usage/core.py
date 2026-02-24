@@ -19,7 +19,7 @@ def get_access_token():
     """Read the OAuth access token from the macOS Keychain."""
     result = subprocess.run(
         ["security", "find-generic-password", "-s", KEYCHAIN_SERVICE, "-w"],
-        capture_output=True, text=True,
+        capture_output=True, text=True, timeout=15,
     )
     if result.returncode != 0:
         return None
