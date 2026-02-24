@@ -4,15 +4,19 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "claude-usage-bar"
-version = "0.1.0"
+dynamic = ["version"]
 description = "macOS menu bar app showing Claude API usage limits"
 requires-python = ">=3.10"
 dependencies = [
-    "rumps>=0.4.0",
+    "rumps>=0.4.0,<0.5",
+    "pyobjc-framework-Cocoa>=10.0",
 ]
 
 [project.scripts]
 claude-usage-bar = "claude_usage.app:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "claude_usage.__version__"}
 
 [tool.setuptools.packages.find]
 where = ["src"]

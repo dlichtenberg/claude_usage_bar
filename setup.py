@@ -15,7 +15,7 @@ OPTIONS = {
         "CFBundleName": "Claude Usage Bar",
         "CFBundleShortVersionString": "0.1.0",
     },
-    "packages": ["rumps"],
+    "packages": ["rumps", "claude_usage"],
 }
 
 setup(

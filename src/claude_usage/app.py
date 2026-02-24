@@ -1,5 +1,7 @@
 """Standalone macOS menu bar app for Claude usage display."""
 
+import threading
+
 import rumps
 
 from claude_usage.core import (
@@ -28,7 +30,6 @@ class ClaudeUsageApp(rumps.App):
         self._week_sonnet = rumps.MenuItem("Week (Sonnet)")
         self._week_sonnet_reset = rumps.MenuItem("  Resets in ...")
 
-        self._extra_sep = rumps.separator
         self._extra_header = rumps.MenuItem("Extra Usage")
         self._extra_bar = rumps.MenuItem("  ...")
 
@@ -50,9 +51,14 @@ class ClaudeUsageApp(rumps.App):
             self._refresh_btn,
         ]
 
-        # Hide extra usage by default
+        # Hide extra usage by default.
+        # _menuitem is a private rumps API (no public alternative for
+        # setHidden_ / setAttributedTitle_); pinned to rumps <0.5.
         self._extra_header._menuitem.setHidden_(True)
         self._extra_bar._menuitem.setHidden_(True)
+
+        self._pending = None
+        self._fetching = False
 
         # Periodic refresh timer
         self._timer = rumps.Timer(self._on_timer, REFRESH_INTERVAL)
@@ -75,29 +81,53 @@ class ClaudeUsageApp(rumps.App):
         self._refresh()
 
     def _refresh(self):
-        """Fetch usage data and update all menu items."""
+        """Kick off a background fetch. No-op if one is already in flight."""
+        if self._fetching:
+            return
+        self._fetching = True
+        threading.Thread(target=self._fetch_bg, daemon=True).start()
+
+    def _fetch_bg(self):
+        """Run all blocking work (keychain, HTTP, subprocess) off the main thread."""
+        data, err = None, None
+
         token = get_access_token()
         if not token:
-            self._show_error("No keychain credentials")
-            return
+            err = "No keychain credentials"
+        else:
+            data, err = fetch_usage(token)
 
-        data, err = fetch_usage(token)
-
-        # If token expired, try refreshing and retry once
-        if err == "auth_expired":
-            if trigger_claude_refresh():
-                token = get_access_token()
-                if token:
-                    data, err = fetch_usage(token)
-
-        if err:
+            # If token expired, try refreshing and retry once
             if err == "auth_expired":
-                self._show_error("Token expired — open Claude Code to re-auth")
-            else:
-                self._show_error(err)
-            return
+                if trigger_claude_refresh():
+                    token = get_access_token()
+                    if token:
+                        data, err = fetch_usage(token)
 
-        self._render(data)
+        self._pending = (data, err)
+        # Schedule UI update on the main run-loop thread via a 0-delay timer
+        self._apply_timer = rumps.Timer(self._apply_result, 0)
+        self._apply_timer.start()
+
+    def _apply_result(self, _sender):
+        """Apply fetched data to the UI (runs on main thread via timer)."""
+        self._apply_timer.stop()
+        self._fetching = False
+
+        try:
+            data, err = self._pending
+            self._pending = None
+
+            if err:
+                if err == "auth_expired":
+                    self._show_error("Token expired \u2014 open Claude Code to re-auth")
+                else:
+                    self._show_error(err)
+                return
+
+            self._render(data)
+        except Exception:
+            self._show_error("Unexpected error")
 
     def _show_error(self, msg):
         """Display error state in menu bar and dropdown."""
@@ -192,6 +222,7 @@ class ClaudeUsageApp(rumps.App):
         self.title = text
         if color:
             attr = styled_string(text, color=color, font_size=12.0)
+            # _nsapp.nsstatusitem is a private rumps API; pinned to rumps <0.5
             self._nsapp.nsstatusitem.button().setAttributedTitle_(attr)
 
 
