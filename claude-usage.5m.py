@@ -8,6 +8,7 @@ Filename encodes 5-minute refresh interval for SwiftBar.
 """
 
 import json
+import shutil
 import subprocess
 import sys
 import urllib.request
@@ -16,6 +17,7 @@ from datetime import datetime, timezone
 
 BASE_API_URL = "https://api.anthropic.com"
 KEYCHAIN_SERVICE = "Claude Code-credentials"
+CLAUDE_BIN = shutil.which("claude")
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -70,7 +72,8 @@ def fetch_usage(token):
             data = json.loads(body)
             return data, None
     except urllib.error.HTTPError as e:
-        return None, f"HTTP {e.code} {e.reason}"
+        code = f"HTTP {e.code} {e.reason}"
+        return None, ("auth_expired" if e.code == 401 else code)
     except urllib.error.URLError as e:
         return None, f"URL error: {e.reason}"
     except json.JSONDecodeError:
@@ -203,6 +206,17 @@ def render(data):
     print("Refresh | refresh=true")
 
 
+def trigger_claude_refresh():
+    """Ask Claude Code to refresh its own tokens via `claude auth status`."""
+    if not CLAUDE_BIN:
+        return False
+    result = subprocess.run(
+        [CLAUDE_BIN, "auth", "status"],
+        capture_output=True, timeout=15,
+    )
+    return result.returncode == 0
+
+
 def main():
     token = get_access_token()
     if not token:
@@ -210,8 +224,19 @@ def main():
         sys.exit(0)
 
     data, api_err = fetch_usage(token)
+
+    # If the token is expired, ask Claude Code to refresh and retry once
+    if api_err == "auth_expired":
+        if trigger_claude_refresh():
+            token = get_access_token()
+            if token:
+                data, api_err = fetch_usage(token)
+
     if api_err:
-        print_error(api_err)
+        if api_err == "auth_expired":
+            print_error("Token expired — open Claude Code to re-auth")
+        else:
+            print_error(api_err)
         sys.exit(0)
 
     render(data)
