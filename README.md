@@ -1,6 +1,6 @@
 # Claude Usage Bar
 
-A [SwiftBar](https://github.com/swiftbar/SwiftBar) plugin that displays your Claude Pro/Max usage limits in the macOS menu bar.
+A macOS menu bar app that displays your Claude Pro/Max usage limits. Available as a **standalone app** or as a **SwiftBar plugin**.
 
 ![menu bar screenshot](https://img.shields.io/badge/macOS-menu%20bar-blue)
 
@@ -15,11 +15,36 @@ A [SwiftBar](https://github.com/swiftbar/SwiftBar) plugin that displays your Cla
 ## Requirements
 
 - macOS
-- [SwiftBar](https://github.com/swiftbar/SwiftBar)
-- Python 3
+- Python 3.10+
 - An active Claude Pro or Max subscription with [Claude Code](https://docs.anthropic.com/en/docs/claude-code) credentials in the macOS Keychain
 
-## Installation
+## Standalone App (Recommended)
+
+### Install and run
+
+```sh
+pip install -e .
+claude-usage-bar
+```
+
+Or run directly:
+
+```sh
+python -m claude_usage
+```
+
+### Build a .app bundle
+
+```sh
+pip install py2app
+python setup.py py2app
+```
+
+This produces `dist/Claude Usage Bar.app`. Move it to `/Applications` and add it to **System Settings > General > Login Items** to start automatically.
+
+## SwiftBar Plugin
+
+If you prefer [SwiftBar](https://github.com/swiftbar/SwiftBar):
 
 1. Install SwiftBar (e.g. `brew install --cask swiftbar`)
 2. Clone this repo:
@@ -35,8 +60,6 @@ A [SwiftBar](https://github.com/swiftbar/SwiftBar) plugin that displays your Cla
    chmod +x claude-usage.5m.py
    ```
 
-The plugin reads OAuth credentials from the macOS Keychain (the same ones Claude Code stores), so no manual API key configuration is needed.
-
 ## How It Works
 
-The filename `claude-usage.5m.py` tells SwiftBar to run the script every 5 minutes. It calls the Anthropic usage API and renders a compact progress bar in the menu bar, with a dropdown showing detailed breakdowns per limit window.
+The app reads OAuth credentials from the macOS Keychain (the same ones Claude Code stores), so no manual API key configuration is needed. It calls the Anthropic usage API and renders a compact progress bar in the menu bar, with a dropdown showing detailed breakdowns per limit window.
