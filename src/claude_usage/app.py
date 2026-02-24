@@ -1,6 +1,7 @@
 """Standalone macOS menu bar app for Claude usage display."""
 
 import threading
+import traceback
 
 import rumps
 from PyObjCTools import AppHelper
@@ -123,6 +124,7 @@ class ClaudeUsageApp(rumps.App):
 
             self._render(data)
         except Exception:
+            traceback.print_exc()
             self._show_error("Unexpected error")
 
     def _show_error(self, msg):
@@ -181,7 +183,7 @@ class ClaudeUsageApp(rumps.App):
             limit_cents = extra.get("monthly_limit", 0)
             used_dollars = used_cents / 100
             limit_dollars = limit_cents / 100
-            pct = extra.get("utilization", 0) or 0
+            pct = extra.get("utilization", 0)
             c = color_hex_for_pct(pct)
             bar = progress_bar(pct)
 

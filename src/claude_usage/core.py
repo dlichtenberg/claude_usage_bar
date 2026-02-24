@@ -139,7 +139,7 @@ def color_hex_for_pct(pct):
 
 def progress_bar(pct, width=10):
     """Build a Unicode progress bar string."""
-    filled = round(pct / 100 * width)
+    filled = max(0, min(width, round(pct / 100 * width)))
     empty = width - filled
     return "\u2588" * filled + "\u2591" * empty
 
