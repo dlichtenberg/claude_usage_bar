@@ -4,6 +4,9 @@ A macOS menu bar app that displays your Claude Pro/Max usage limits. Available a
 
 ![menu bar screenshot](https://img.shields.io/badge/macOS-menu%20bar-blue)
 
+<img width="277" height="273" alt="image" src="https://github.com/user-attachments/assets/71d950ee-7bc6-4900-abd6-1fcc15164eda" />
+
+
 ## Features
 
 - Shows session (5-hour) and weekly usage as progress bars
