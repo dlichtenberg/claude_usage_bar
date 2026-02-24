@@ -6,12 +6,18 @@ A macOS menu bar app that displays your Claude Pro/Max usage limits. Available a
 
 <img width="277" height="273" alt="image" src="https://github.com/user-attachments/assets/71d950ee-7bc6-4900-abd6-1fcc15164eda" />
 
-## Requirements
+## Installation
 
-- macOS
-- Python 3.10+
-- An active Claude Pro or Max subscription with [Claude Code](https://docs.anthropic.com/en/docs/claude-code) credentials in the macOS Keychain
+with pypi
+`pip install claude-usage-bar`
 
+with homebrew
+`brew install claude-usage-bar`
+
+download .app bundle
+TODO
+
+with [SwiftBar](https://github.com/swiftbar/SwiftBar) plugin:
 ## Standalone App (Recommended)
 
 ### Install and run
@@ -54,6 +60,7 @@ If you prefer [SwiftBar](https://github.com/swiftbar/SwiftBar):
    chmod +x claude-usage.5m.py
    ```
 
-## How It Works
+## Requirements
 
-The app reads OAuth credentials from the macOS Keychain (the same ones Claude Code stores), so no manual API key configuration is needed. It calls the Anthropic usage API and renders a compact progress bar in the menu bar, with a dropdown showing detailed breakdowns per limit window.
+- Python 3.10+
+- An active Claude Pro or Max subscription with [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed.
