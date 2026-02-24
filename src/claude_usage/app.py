@@ -1,6 +1,10 @@
 """Standalone macOS menu bar app for Claude usage display."""
 
+import threading
+import traceback
+
 import rumps
+from PyObjCTools import AppHelper
 
 from claude_usage.core import (
     get_access_token,
@@ -28,7 +32,6 @@ class ClaudeUsageApp(rumps.App):
         self._week_sonnet = rumps.MenuItem("Week (Sonnet)")
         self._week_sonnet_reset = rumps.MenuItem("  Resets in ...")
 
-        self._extra_sep = rumps.separator
         self._extra_header = rumps.MenuItem("Extra Usage")
         self._extra_bar = rumps.MenuItem("  ...")
 
@@ -50,9 +53,13 @@ class ClaudeUsageApp(rumps.App):
             self._refresh_btn,
         ]
 
-        # Hide extra usage by default
+        # Hide extra usage by default.
+        # _menuitem is a private rumps API (no public alternative for
+        # setHidden_ / setAttributedTitle_); pinned to rumps <0.5.
         self._extra_header._menuitem.setHidden_(True)
         self._extra_bar._menuitem.setHidden_(True)
+
+        self._fetching = False
 
         # Periodic refresh timer
         self._timer = rumps.Timer(self._on_timer, REFRESH_INTERVAL)
@@ -75,29 +82,50 @@ class ClaudeUsageApp(rumps.App):
         self._refresh()
 
     def _refresh(self):
-        """Fetch usage data and update all menu items."""
-        token = get_access_token()
-        if not token:
-            self._show_error("No keychain credentials")
+        """Kick off a background fetch. No-op if one is already in flight."""
+        if self._fetching:
             return
+        self._fetching = True
+        threading.Thread(target=self._fetch_bg, daemon=True).start()
 
-        data, err = fetch_usage(token)
-
-        # If token expired, try refreshing and retry once
-        if err == "auth_expired":
-            if trigger_claude_refresh():
-                token = get_access_token()
-                if token:
-                    data, err = fetch_usage(token)
-
-        if err:
-            if err == "auth_expired":
-                self._show_error("Token expired — open Claude Code to re-auth")
+    def _fetch_bg(self):
+        """Run all blocking work (keychain, HTTP, subprocess) off the main thread."""
+        data, err = None, None
+        try:
+            token = get_access_token()
+            if not token:
+                err = "No keychain credentials"
             else:
-                self._show_error(err)
-            return
+                data, err = fetch_usage(token)
 
-        self._render(data)
+                # If token expired, try refreshing and retry once
+                if err == "auth_expired":
+                    if trigger_claude_refresh():
+                        token = get_access_token()
+                        if token:
+                            data, err = fetch_usage(token)
+        except Exception as e:
+            data, err = None, f"{type(e).__name__}: {e}"
+
+        # Dispatch UI update to the main run-loop thread
+        AppHelper.callAfter(self._apply_result, data, err)
+
+    def _apply_result(self, data, err):
+        """Apply fetched data to the UI (runs on main thread via callAfter)."""
+        self._fetching = False
+
+        try:
+            if err:
+                if err == "auth_expired":
+                    self._show_error("Token expired \u2014 open Claude Code to re-auth")
+                else:
+                    self._show_error(err)
+                return
+
+            self._render(data)
+        except Exception:
+            traceback.print_exc()
+            self._show_error("Unexpected error")
 
     def _show_error(self, msg):
         """Display error state in menu bar and dropdown."""
@@ -155,7 +183,7 @@ class ClaudeUsageApp(rumps.App):
             limit_cents = extra.get("monthly_limit", 0)
             used_dollars = used_cents / 100
             limit_dollars = limit_cents / 100
-            pct = extra.get("utilization", 0) or 0
+            pct = extra.get("utilization", 0)
             c = color_hex_for_pct(pct)
             bar = progress_bar(pct)
 
@@ -192,6 +220,7 @@ class ClaudeUsageApp(rumps.App):
         self.title = text
         if color:
             attr = styled_string(text, color=color, font_size=12.0)
+            # _nsapp.nsstatusitem is a private rumps API; pinned to rumps <0.5
             self._nsapp.nsstatusitem.button().setAttributedTitle_(attr)
 
 

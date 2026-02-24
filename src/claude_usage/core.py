@@ -4,6 +4,7 @@ Pure stdlib — no rumps or PyObjC imports.
 """
 
 import json
+import os
 import shutil
 import subprocess
 import urllib.request
@@ -12,14 +13,13 @@ from datetime import datetime, timezone
 
 BASE_API_URL = "https://api.anthropic.com"
 KEYCHAIN_SERVICE = "Claude Code-credentials"
-CLAUDE_BIN = shutil.which("claude")
 
 
 def get_access_token():
     """Read the OAuth access token from the macOS Keychain."""
     result = subprocess.run(
         ["security", "find-generic-password", "-s", KEYCHAIN_SERVICE, "-w"],
-        capture_output=True, text=True,
+        capture_output=True, text=True, timeout=15,
     )
     if result.returncode != 0:
         return None
@@ -73,15 +73,30 @@ def fetch_usage(token):
     except json.JSONDecodeError:
         return None, "Invalid JSON response"
     except Exception as e:
-        return None, type(e).__name__
+        return None, f"{type(e).__name__}: {e}"
+
+
+def _find_claude():
+    """Resolve the claude binary path, checking common locations."""
+    found = shutil.which("claude")
+    if found:
+        return found
+    for path in [
+        os.path.expanduser("~/.claude/local/claude"),
+        "/usr/local/bin/claude",
+    ]:
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+    return None
 
 
 def trigger_claude_refresh():
     """Ask Claude Code to refresh its own tokens via `claude auth status`."""
-    if not CLAUDE_BIN:
+    claude_bin = _find_claude()
+    if not claude_bin:
         return False
     result = subprocess.run(
-        [CLAUDE_BIN, "auth", "status"],
+        [claude_bin, "auth", "status"],
         capture_output=True, timeout=15,
     )
     return result.returncode == 0
@@ -124,7 +139,7 @@ def color_hex_for_pct(pct):
 
 def progress_bar(pct, width=10):
     """Build a Unicode progress bar string."""
-    filled = round(pct / 100 * width)
+    filled = max(0, min(width, round(pct / 100 * width)))
     empty = width - filled
     return "\u2588" * filled + "\u2591" * empty
 
