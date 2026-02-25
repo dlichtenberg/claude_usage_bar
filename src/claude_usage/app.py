@@ -1,5 +1,7 @@
 """Standalone macOS menu bar app for Claude usage display."""
 
+import logging
+import os
 import threading
 import traceback
 
@@ -10,12 +12,16 @@ from claude_usage.core import (
     get_access_token,
     fetch_usage,
     trigger_claude_refresh,
+    find_claude,
     time_until,
     color_hex_for_pct,
     progress_bar,
     menu_bar_text,
 )
+
 from claude_usage.attributed import styled_string
+
+logger = logging.getLogger(__name__)
 
 REFRESH_INTERVAL = 300  # 5 minutes
 
@@ -90,50 +96,68 @@ class ClaudeUsageApp(rumps.App):
 
     def _fetch_bg(self):
         """Run all blocking work (keychain, HTTP, subprocess) off the main thread."""
-        data, err = None, None
+        data, err, hint = None, None, None
         try:
+            logger.debug("Starting usage fetch")
             token = get_access_token()
             if not token:
                 err = "No keychain credentials"
+                hint = "Run 'claude' in Terminal to authenticate"
+                logger.warning("No access token found in keychain")
             else:
+                logger.debug("Token retrieved, calling usage API")
                 data, err = fetch_usage(token)
 
                 # If token expired, try refreshing and retry once
                 if err == "auth_expired":
+                    logger.info("Token expired, attempting refresh via Claude CLI")
                     if trigger_claude_refresh():
+                        logger.info("Refresh succeeded, retrying usage fetch")
                         token = get_access_token()
                         if token:
                             data, err = fetch_usage(token)
+                    else:
+                        logger.warning("Token refresh failed")
+                        err = "Token expired"
+                        hint = "Open Claude Code to refresh, or click Refresh"
+
+            # Check CLI availability for hint (done off main thread)
+            if err and not hint and find_claude() is None:
+                hint = "Install Claude Code CLI"
         except Exception as e:
             data, err = None, f"{type(e).__name__}: {e}"
+            logger.error("Unexpected error in fetch: %s", e)
 
         # Dispatch UI update to the main run-loop thread
-        AppHelper.callAfter(self._apply_result, data, err)
+        AppHelper.callAfter(self._apply_result, data, err, hint)
 
-    def _apply_result(self, data, err):
+    def _apply_result(self, data, err, hint=None):
         """Apply fetched data to the UI (runs on main thread via callAfter)."""
         self._fetching = False
 
         try:
             if err:
-                if err == "auth_expired":
-                    self._show_error("Token expired \u2014 open Claude Code to re-auth")
-                else:
-                    self._show_error(err)
+                logger.warning("Entering error state: %s", err)
+                self._show_error(err, hint)
                 return
 
+            logger.debug("Usage data received, updating UI")
             self._render(data)
         except Exception:
             traceback.print_exc()
             self._show_error("Unexpected error")
 
-    def _show_error(self, msg):
+    def _show_error(self, msg, hint=None):
         """Display error state in menu bar and dropdown."""
         self._set_title("C: !!", "#FF4444")
         self._session._menuitem.setAttributedTitle_(
             styled_string(f"Error: {msg}", color="#FF4444")
         )
-        self._session_reset._menuitem.setAttributedTitle_(styled_string(""))
+        hint_attr = (
+            styled_string(f"  {hint}", color="#999999", font_size=11.0)
+            if hint else styled_string("")
+        )
+        self._session_reset._menuitem.setAttributedTitle_(hint_attr)
         self._week_all._menuitem.setAttributedTitle_(styled_string(""))
         self._week_all_reset._menuitem.setAttributedTitle_(styled_string(""))
         self._week_sonnet._menuitem.setAttributedTitle_(styled_string(""))
@@ -226,4 +250,9 @@ class ClaudeUsageApp(rumps.App):
 
 def main():
     """Entry point for console_scripts."""
+    log_level = os.environ.get("CLAUDE_USAGE_LOG", "INFO").upper()
+    logging.basicConfig(
+        level=getattr(logging, log_level, logging.INFO),
+        format="%(asctime)s %(name)s %(levelname)s %(message)s",
+    )
     ClaudeUsageApp().run()
