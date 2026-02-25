@@ -8,6 +8,7 @@ Filename encodes 5-minute refresh interval for SwiftBar.
 """
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -18,6 +19,16 @@ from datetime import datetime, timezone
 BASE_API_URL = "https://api.anthropic.com"
 KEYCHAIN_SERVICE = "Claude Code-credentials"
 CLAUDE_BIN = shutil.which("claude")
+
+SESSION_COLOR = "#44BB44"  # green
+WEEK_COLOR = "#4488FF"     # blue
+
+CONFIG_DIR = os.path.expanduser("~/.config/claude_usage")
+CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
+
+MODE_COLOR_SPLIT = "color_split"
+MODE_MARKER = "marker"
+DEFAULT_MODE = MODE_COLOR_SPLIT
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -131,6 +142,41 @@ def menu_bar_mini(pct):
     return f"C: {bar} {pct:.0f}%"
 
 
+def marker_progress_bar(session_pct, week_pct, width=8):
+    """Build a progress bar with session fill and a │ marker for week usage."""
+    session_filled = max(0, min(width, round(session_pct / 100 * width)))
+    week_pos = max(0, min(width - 1, round(week_pct / 100 * (width - 1))))
+
+    chars = []
+    for i in range(width):
+        if i == week_pos and week_pct > 0:
+            chars.append("│")
+        elif i < session_filled:
+            chars.append("█")
+        else:
+            chars.append("░")
+    return "".join(chars)
+
+
+def merged_menu_bar_mini(session_pct, week_pct, mode):
+    """Menu bar text for merged display modes."""
+    headline_pct = max(session_pct, week_pct)
+    if mode == MODE_MARKER:
+        bar = marker_progress_bar(session_pct, week_pct, width=8)
+    else:
+        bar = progress_bar(headline_pct, width=8)
+    return f"C: {bar} {headline_pct:.0f}%"
+
+
+def load_config():
+    """Load config from ~/.config/claude_usage/config.json."""
+    try:
+        with open(CONFIG_PATH, "r") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {"display_mode": DEFAULT_MODE}
+
+
 # ── SwiftBar Output ──────────────────────────────────────────────────────────
 
 def print_error(msg):
@@ -150,14 +196,18 @@ def render(data):
     seven_day_sonnet = data.get("seven_day_sonnet", {})
     extra = data.get("extra_usage", {})
 
-    headline_pct = max(
-        five_hour.get("utilization", 0),
-        seven_day.get("utilization", 0),
-    )
+    session_pct = five_hour.get("utilization", 0)
+    week_pct = seven_day.get("utilization", 0)
+    headline_pct = max(session_pct, week_pct)
+
+    config = load_config()
+    mode = config.get("display_mode", DEFAULT_MODE)
 
     # ── Menu bar line ──
+    # SwiftBar doesn't support per-character coloring, so color_split
+    # falls back to a single-color bar. Marker mode works natively.
     color = color_for_pct(headline_pct)
-    print(f"{menu_bar_mini(headline_pct)} | color={color} font=Menlo size=12")
+    print(f"{merged_menu_bar_mini(session_pct, week_pct, mode)} | color={color} font=Menlo size=12")
 
     print("---")
 
@@ -201,6 +251,15 @@ def render(data):
         bar = progress_bar(pct)
         print(f"Extra Usage      ${used_dollars:.2f} / ${limit_dollars:.2f} | font=Menlo size=13")
         print(f"                 {bar} {pct:.0f}% | font=Menlo size=13 color={c}")
+
+    # ── Display Mode ──
+    print("---")
+    cs_check = "✓ " if mode == MODE_COLOR_SPLIT else "  "
+    mk_check = "✓ " if mode == MODE_MARKER else "  "
+    print(f"{cs_check}Color Split | font=Menlo size=13 bash=false")
+    print(f"{mk_check}Marker | font=Menlo size=13 bash=false")
+    if mode == MODE_MARKER:
+        print("  bar = session  │ = week | font=Menlo size=11 color=gray")
 
     print("---")
     print("Refresh | refresh=true")

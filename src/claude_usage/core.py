@@ -14,6 +14,16 @@ from datetime import datetime, timezone
 BASE_API_URL = "https://api.anthropic.com"
 KEYCHAIN_SERVICE = "Claude Code-credentials"
 
+SESSION_COLOR = "#44BB44"  # green
+WEEK_COLOR = "#4488FF"     # blue
+
+CONFIG_DIR = os.path.expanduser("~/.config/claude_usage")
+CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
+
+MODE_COLOR_SPLIT = "color_split"
+MODE_MARKER = "marker"
+DEFAULT_MODE = MODE_COLOR_SPLIT
+
 
 def get_access_token():
     """Read the OAuth access token from the macOS Keychain."""
@@ -148,3 +158,81 @@ def menu_bar_text(pct):
     """Compact menu bar representation: C: ████░░░░ 42%"""
     bar = progress_bar(pct, width=8)
     return f"C: {bar} {pct:.0f}%"
+
+
+def marker_progress_bar(session_pct, week_pct, width=8):
+    """Build a progress bar with session fill and a │ marker for week usage.
+
+    Bar fills based on session, │ is placed at the week position.
+    """
+    session_filled = max(0, min(width, round(session_pct / 100 * width)))
+    week_pos = max(0, min(width - 1, round(week_pct / 100 * (width - 1))))
+
+    chars = []
+    for i in range(width):
+        if i == week_pos and week_pct > 0:
+            chars.append("\u2502")  # │
+        elif i < session_filled:
+            chars.append("\u2588")  # █
+        else:
+            chars.append("\u2591")  # ░
+    return "".join(chars)
+
+
+def color_split_bar_segments(session_pct, week_pct, width=8):
+    """Return a list of (text, color_hex) segments for the color-split bar.
+
+    The lower usage fills from the left in its color, the higher continues
+    filling in its color, and the remainder is empty.
+    """
+    session_filled = max(0, min(width, round(session_pct / 100 * width)))
+    week_filled = max(0, min(width, round(week_pct / 100 * width)))
+
+    if session_filled <= week_filled:
+        lower_n, lower_color = session_filled, SESSION_COLOR
+        upper_n, upper_color = week_filled, WEEK_COLOR
+    else:
+        lower_n, lower_color = week_filled, WEEK_COLOR
+        upper_n, upper_color = session_filled, SESSION_COLOR
+
+    segments = []
+    if lower_n > 0:
+        segments.append(("\u2588" * lower_n, lower_color))
+    if upper_n - lower_n > 0:
+        segments.append(("\u2588" * (upper_n - lower_n), upper_color))
+    empty = width - upper_n
+    if empty > 0:
+        segments.append(("\u2591" * empty, None))
+    return segments
+
+
+def merged_menu_bar_text(session_pct, week_pct, mode):
+    """Return menu bar text for merged display modes.
+
+    For marker mode, returns a plain string.
+    For color_split mode, returns a plain string (caller handles coloring).
+    """
+    headline_pct = max(session_pct, week_pct)
+    if mode == MODE_MARKER:
+        bar = marker_progress_bar(session_pct, week_pct, width=8)
+    else:
+        bar = progress_bar(headline_pct, width=8)
+    return f"C: {bar} {headline_pct:.0f}%"
+
+
+# ── Config persistence ───────────────────────────────────────────────────────
+
+def load_config():
+    """Load config from ~/.config/claude_usage/config.json."""
+    try:
+        with open(CONFIG_PATH, "r") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {"display_mode": DEFAULT_MODE}
+
+
+def save_config(config):
+    """Save config to ~/.config/claude_usage/config.json."""
+    os.makedirs(CONFIG_DIR, exist_ok=True)
+    with open(CONFIG_PATH, "w") as f:
+        json.dump(config, f, indent=2)
