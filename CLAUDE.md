@@ -5,6 +5,12 @@
 - When using `gh` CLI, always pass `--repo dlichtenberg/claude_usage_bar` since the local git remote is a proxy and not recognized as a GitHub host.
 - Do not implement direct OAuth token refresh in this app. Token refresh should be handled by the Claude CLI, not by this app.
 
+## Architecture Notes
+
+- `claude-usage.5m.py` (SwiftBar plugin) is a standalone script that **duplicates** business logic from `src/claude_usage/core.py` because SwiftBar requires a single self-contained file. When changing shared logic (progress bars, color thresholds, config loading, etc.), always update both files or they will diverge.
+- User preferences are stored in `~/.config/claude_usage/config.json`.
+- Do not write scratch/planning files into the repo — use the conversation instead.
+
 ## Debugging Auth Errors
 
 The app logs the auth/refresh flow via Python `logging` (INFO by default). Set `CLAUDE_USAGE_LOG=DEBUG` for verbose output. When running from Terminal, logs go to stderr. Key things to look for:
