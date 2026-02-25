@@ -1,6 +1,7 @@
 # Claude Usage Bar
 
 - Use `conda activate claude_usage` for the project virtualenv.
+- After editing source files, run `pip install -e .` if imports reflect stale code (the package may have been installed non-editable).
 - Don't add "Generated with Claude Code" lines to PRs.
 - When using `gh` CLI, always pass `--repo dlichtenberg/claude_usage_bar` since the local git remote is a proxy and not recognized as a GitHub host.
 - Do not implement direct OAuth token refresh in this app. Token refresh should be handled by the Claude CLI, not by this app.
