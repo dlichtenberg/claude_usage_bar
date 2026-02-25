@@ -164,6 +164,8 @@ def marker_progress_bar(session_pct, week_pct, width=8):
     """Build a progress bar with session fill and a │ marker for week usage.
 
     Bar fills based on session, │ is placed at the week position.
+    Uses ┃ (thick vertical) when the marker falls inside the filled zone
+    so no session block is visually lost.
     """
     session_filled = max(0, min(width, round(session_pct / 100 * width)))
     week_pos = max(0, min(width - 1, round(week_pct / 100 * (width - 1))))
@@ -171,7 +173,7 @@ def marker_progress_bar(session_pct, week_pct, width=8):
     chars = []
     for i in range(width):
         if i == week_pos and week_pct > 0:
-            chars.append("\u2502")  # │
+            chars.append("\u2503" if i < session_filled else "\u2502")  # ┃ or │
         elif i < session_filled:
             chars.append("\u2588")  # █
         else:

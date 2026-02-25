@@ -20,9 +20,6 @@ BASE_API_URL = "https://api.anthropic.com"
 KEYCHAIN_SERVICE = "Claude Code-credentials"
 CLAUDE_BIN = shutil.which("claude")
 
-SESSION_COLOR = "#44BB44"  # green
-WEEK_COLOR = "#4488FF"     # blue
-
 CONFIG_DIR = os.path.expanduser("~/.config/claude_usage")
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
 
@@ -131,15 +128,9 @@ def color_for_pct(pct):
 
 def progress_bar(pct, width=10):
     """Build a Unicode progress bar string."""
-    filled = round(pct / 100 * width)
+    filled = max(0, min(width, round(pct / 100 * width)))
     empty = width - filled
     return "█" * filled + "░" * empty
-
-
-def menu_bar_mini(pct):
-    """Compact menu bar representation."""
-    bar = progress_bar(pct, width=8)
-    return f"C: {bar} {pct:.0f}%"
 
 
 def marker_progress_bar(session_pct, week_pct, width=8):
@@ -150,7 +141,7 @@ def marker_progress_bar(session_pct, week_pct, width=8):
     chars = []
     for i in range(width):
         if i == week_pos and week_pct > 0:
-            chars.append("│")
+            chars.append("┃" if i < session_filled else "│")
         elif i < session_filled:
             chars.append("█")
         else:
@@ -252,14 +243,12 @@ def render(data):
         print(f"Extra Usage      ${used_dollars:.2f} / ${limit_dollars:.2f} | font=Menlo size=13")
         print(f"                 {bar} {pct:.0f}% | font=Menlo size=13 color={c}")
 
-    # ── Display Mode ──
+    # ── Display Mode (read-only, changed via standalone app) ──
     print("---")
-    cs_check = "✓ " if mode == MODE_COLOR_SPLIT else "  "
-    mk_check = "✓ " if mode == MODE_MARKER else "  "
-    print(f"{cs_check}Color Split | font=Menlo size=13 bash=false")
-    print(f"{mk_check}Marker | font=Menlo size=13 bash=false")
+    mode_label = "Color Split" if mode == MODE_COLOR_SPLIT else "Marker"
+    print(f"Mode: {mode_label} | font=Menlo size=11 color=gray")
     if mode == MODE_MARKER:
-        print("  bar = session  │ = week | font=Menlo size=11 color=gray")
+        print("  bar = session  ┃│ = week | font=Menlo size=11 color=gray")
 
     print("---")
     print("Refresh | refresh=true")

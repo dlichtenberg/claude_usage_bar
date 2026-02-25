@@ -13,8 +13,6 @@ from claude_usage.core import (
     time_until,
     color_hex_for_pct,
     progress_bar,
-    menu_bar_text,
-    marker_progress_bar,
     color_split_bar_segments,
     merged_menu_bar_text,
     load_config,
@@ -51,7 +49,7 @@ class ClaudeUsageApp(rumps.App):
         self._mode_marker = rumps.MenuItem(
             "Marker", callback=self._on_mode_marker,
         )
-        self._marker_legend = rumps.MenuItem("  bar = session  │ = week")
+        self._marker_legend = rumps.MenuItem("  bar = session  ┃│ = week")
 
         self._refresh_btn = rumps.MenuItem("Refresh", callback=self._on_refresh)
 
