@@ -10,6 +10,8 @@ from AppKit import (
     NSForegroundColorAttributeName,
     NSFontAttributeName,
     NSMutableAttributedString,
+    NSTextField,
+    NSView,
 )
 
 
@@ -59,3 +61,28 @@ def styled_segments(segments, font_name="Menlo", font_size=13.0):
         part = styled_string(text, color=color, font_name=font_name, font_size=font_size)
         result.appendAttributedString_(part)
     return result
+
+
+def set_inert_title(ns_menu_item, attributed_string, height=22.0,
+                    padding_left=20.0):
+    """Set a menu item's display via a custom NSView.
+
+    The item renders at full opacity with no hover highlight —
+    the standard macOS pattern for informational (non-interactive) rows.
+    """
+    label = NSTextField.alloc().init()
+    label.setAttributedStringValue_(attributed_string)
+    label.setEditable_(False)
+    label.setSelectable_(False)
+    label.setBezeled_(False)
+    label.setDrawsBackground_(False)
+    label.sizeToFit()
+
+    frame = label.frame()
+    label.setFrameOrigin_((padding_left, (height - frame.size.height) / 2))
+
+    view_width = max(frame.size.width + padding_left + 10, 250)
+    view = NSView.alloc().initWithFrame_(((0, 0), (view_width, height)))
+    view.addSubview_(label)
+
+    ns_menu_item.setView_(view)

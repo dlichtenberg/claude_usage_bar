@@ -23,9 +23,12 @@ WEEK_COLOR = "#4488FF"     # blue
 CONFIG_DIR = os.path.expanduser("~/.config/claude_usage")
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
 
+MODE_SESSION = "session"
+MODE_WEEK = "week"
+MODE_HIGHEST = "highest"
 MODE_COLOR_SPLIT = "color_split"
 MODE_MARKER = "marker"
-DEFAULT_MODE = MODE_COLOR_SPLIT
+DEFAULT_MODE = MODE_MARKER
 
 
 def get_access_token():
@@ -188,6 +191,22 @@ def progress_bar(pct, width=10):
     return "\u2588" * filled + "\u2591" * empty
 
 
+def progress_bar_segments(pct, color, width=10):
+    """Return (text, color_hex) segments for a progress bar.
+
+    Filled blocks use the given color; empty blocks use a neutral gray
+    so they stay visible on light backgrounds.
+    """
+    filled = max(0, min(width, round(pct / 100 * width)))
+    empty = width - filled
+    segments = []
+    if filled:
+        segments.append(("\u2588" * filled, color))
+    if empty:
+        segments.append(("\u2591" * empty, "#AAAAAA"))
+    return segments
+
+
 def menu_bar_text(pct):
     """Compact menu bar representation: C: ████░░░░ 42%"""
     bar = progress_bar(pct, width=8)
@@ -245,14 +264,26 @@ def color_split_bar_segments(session_pct, week_pct, width=8):
 def merged_menu_bar_text(session_pct, week_pct, mode):
     """Return menu bar text for merged display modes.
 
-    For marker mode, returns a plain string.
-    For color_split mode, returns a plain string (caller handles coloring).
+    For marker mode, returns a plain string (% = session).
+    For color_split mode, returns a plain string (caller handles coloring, % = max).
+    For session/week/highest, shows single-metric bar and %.
     """
-    headline_pct = max(session_pct, week_pct)
+    if mode == MODE_SESSION:
+        bar = progress_bar(session_pct, width=8)
+        return f"C: {bar} {session_pct:.0f}%"
+    if mode == MODE_WEEK:
+        bar = progress_bar(week_pct, width=8)
+        return f"C: {bar} {week_pct:.0f}%"
+    if mode == MODE_HIGHEST:
+        highest = max(session_pct, week_pct)
+        bar = progress_bar(highest, width=8)
+        return f"C: {bar} {highest:.0f}%"
     if mode == MODE_MARKER:
         bar = marker_progress_bar(session_pct, week_pct, width=8)
-    else:
-        bar = progress_bar(headline_pct, width=8)
+        return f"C: {bar} {session_pct:.0f}%"
+    # MODE_COLOR_SPLIT
+    headline_pct = max(session_pct, week_pct)
+    bar = progress_bar(headline_pct, width=8)
     return f"C: {bar} {headline_pct:.0f}%"
 
 
