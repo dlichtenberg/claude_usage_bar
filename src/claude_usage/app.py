@@ -16,10 +16,17 @@ from claude_usage.core import (
     time_until,
     color_hex_for_pct,
     progress_bar,
-    menu_bar_text,
+    color_split_bar_segments,
+    merged_menu_bar_text,
+    load_config,
+    save_config,
+    SESSION_COLOR,
+    WEEK_COLOR,
+    MODE_COLOR_SPLIT,
+    MODE_MARKER,
 )
 
-from claude_usage.attributed import styled_string
+from claude_usage.attributed import styled_string, styled_segments
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +48,15 @@ class ClaudeUsageApp(rumps.App):
         self._extra_header = rumps.MenuItem("Extra Usage")
         self._extra_bar = rumps.MenuItem("  ...")
 
+        # Display mode items
+        self._mode_color_split = rumps.MenuItem(
+            "Color Split", callback=self._on_mode_color_split,
+        )
+        self._mode_marker = rumps.MenuItem(
+            "Marker", callback=self._on_mode_marker,
+        )
+        self._marker_legend = rumps.MenuItem("  bar = session  ┃│ = week")
+
         self._refresh_btn = rumps.MenuItem("Refresh", callback=self._on_refresh)
 
         self.menu = [
@@ -56,6 +72,10 @@ class ClaudeUsageApp(rumps.App):
             self._extra_header,
             self._extra_bar,
             None,
+            self._mode_color_split,
+            self._mode_marker,
+            self._marker_legend,
+            None,
             self._refresh_btn,
         ]
 
@@ -64,6 +84,14 @@ class ClaudeUsageApp(rumps.App):
         # setHidden_ / setAttributedTitle_); pinned to rumps <0.5.
         self._extra_header._menuitem.setHidden_(True)
         self._extra_bar._menuitem.setHidden_(True)
+
+        # Load display mode config
+        self._config = load_config()
+        self._display_mode = self._config.get("display_mode", MODE_COLOR_SPLIT)
+        self._update_mode_checkmarks()
+
+        # Cache last API data for re-render on mode change
+        self._last_data = None
 
         self._fetching = False
 
@@ -86,6 +114,27 @@ class ClaudeUsageApp(rumps.App):
 
     def _on_refresh(self, _sender):
         self._refresh()
+
+    def _on_mode_color_split(self, _sender):
+        self._set_display_mode(MODE_COLOR_SPLIT)
+
+    def _on_mode_marker(self, _sender):
+        self._set_display_mode(MODE_MARKER)
+
+    def _set_display_mode(self, mode):
+        self._display_mode = mode
+        self._config["display_mode"] = mode
+        save_config(self._config)
+        self._update_mode_checkmarks()
+        if self._last_data:
+            self._render(self._last_data)
+
+    def _update_mode_checkmarks(self):
+        self._mode_color_split.state = self._display_mode == MODE_COLOR_SPLIT
+        self._mode_marker.state = self._display_mode == MODE_MARKER
+        self._marker_legend._menuitem.setHidden_(
+            self._display_mode != MODE_MARKER
+        )
 
     def _refresh(self):
         """Kick off a background fetch. No-op if one is already in flight."""
@@ -167,18 +216,19 @@ class ClaudeUsageApp(rumps.App):
 
     def _render(self, data):
         """Update all menu items from API response data."""
+        self._last_data = data
+
         five_hour = data.get("five_hour", {})
         seven_day = data.get("seven_day", {})
         seven_day_sonnet = data.get("seven_day_sonnet", {})
         extra = data.get("extra_usage", {})
 
-        headline_pct = max(
-            five_hour.get("utilization", 0),
-            seven_day.get("utilization", 0),
-        )
+        session_pct = five_hour.get("utilization", 0)
+        week_pct = seven_day.get("utilization", 0)
+        headline_pct = max(session_pct, week_pct)
 
-        # Menu bar title
-        self._set_title(menu_bar_text(headline_pct), color_hex_for_pct(headline_pct))
+        # Menu bar title — depends on display mode
+        self._set_merged_title(session_pct, week_pct)
 
         # Session (5h)
         self._style_limit(
@@ -246,6 +296,30 @@ class ClaudeUsageApp(rumps.App):
             attr = styled_string(text, color=color, font_size=12.0)
             # _nsapp.nsstatusitem is a private rumps API; pinned to rumps <0.5
             self._nsapp.nsstatusitem.button().setAttributedTitle_(attr)
+
+    def _set_merged_title(self, session_pct, week_pct):
+        """Set the menu bar title using the active display mode."""
+        headline_pct = max(session_pct, week_pct)
+        headline_color = color_hex_for_pct(headline_pct)
+        text = merged_menu_bar_text(session_pct, week_pct, self._display_mode)
+
+        # Set plain title for rumps internal state
+        self.title = text
+
+        if self._display_mode == MODE_COLOR_SPLIT:
+            # Build per-character colored bar
+            bar_segments = color_split_bar_segments(
+                session_pct, week_pct, width=8,
+            )
+            segments = [("C: ", headline_color)]
+            segments.extend(bar_segments)
+            segments.append((f" {headline_pct:.0f}%", headline_color))
+            attr = styled_segments(segments, font_size=12.0)
+        else:
+            # Marker mode — single color
+            attr = styled_string(text, color=headline_color, font_size=12.0)
+
+        self._nsapp.nsstatusitem.button().setAttributedTitle_(attr)
 
 
 def main():
