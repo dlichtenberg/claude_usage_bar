@@ -1,7 +1,9 @@
 # Claude Usage Bar
 
-- Use `conda activate claude_usage` for the project virtualenv.
-- After editing source files, run `pip install -e .` if imports reflect stale code (the package may have been installed non-editable).
+- Use the local `.venv`: `source .venv/bin/activate` (or just use `.venv/bin/python` directly).
+- Recreate with `uv venv --python 3.12 && uv pip install -e . pytest`.
+- After editing source files, run `uv pip install -e .` if imports reflect stale code (the package may have been installed non-editable).
+- Run tests: `.venv/bin/python -m pytest tests/`.
 - Don't add "Generated with Claude Code" lines to PRs.
 - When using `gh` CLI, always pass `--repo dlichtenberg/claude_usage_bar` since the local git remote is a proxy and not recognized as a GitHub host.
 - Do not implement direct OAuth token refresh in this app. Token refresh should be handled by the Claude CLI, not by this app.

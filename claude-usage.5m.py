@@ -23,9 +23,12 @@ CLAUDE_BIN = shutil.which("claude")
 CONFIG_DIR = os.path.expanduser("~/.config/claude_usage")
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
 
+MODE_SESSION = "session"
+MODE_WEEK = "week"
+MODE_HIGHEST = "highest"
 MODE_COLOR_SPLIT = "color_split"
 MODE_MARKER = "marker"
-DEFAULT_MODE = MODE_COLOR_SPLIT
+DEFAULT_MODE = MODE_MARKER
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -151,11 +154,22 @@ def marker_progress_bar(session_pct, week_pct, width=8):
 
 def merged_menu_bar_mini(session_pct, week_pct, mode):
     """Menu bar text for merged display modes."""
-    headline_pct = max(session_pct, week_pct)
+    if mode == MODE_SESSION:
+        bar = progress_bar(session_pct, width=8)
+        return f"C: {bar} {session_pct:.0f}%"
+    if mode == MODE_WEEK:
+        bar = progress_bar(week_pct, width=8)
+        return f"C: {bar} {week_pct:.0f}%"
+    if mode == MODE_HIGHEST:
+        highest = max(session_pct, week_pct)
+        bar = progress_bar(highest, width=8)
+        return f"C: {bar} {highest:.0f}%"
     if mode == MODE_MARKER:
         bar = marker_progress_bar(session_pct, week_pct, width=8)
-    else:
-        bar = progress_bar(headline_pct, width=8)
+        return f"C: {bar} {session_pct:.0f}%"
+    # MODE_COLOR_SPLIT
+    headline_pct = max(session_pct, week_pct)
+    bar = progress_bar(headline_pct, width=8)
     return f"C: {bar} {headline_pct:.0f}%"
 
 
@@ -197,28 +211,33 @@ def render(data):
     # ── Menu bar line ──
     # SwiftBar doesn't support per-character coloring, so color_split
     # falls back to a single-color bar. Marker mode works natively.
-    color = color_for_pct(headline_pct)
+    if mode in (MODE_SESSION, MODE_MARKER):
+        color = color_for_pct(session_pct)
+    elif mode == MODE_WEEK:
+        color = color_for_pct(week_pct)
+    else:
+        color = color_for_pct(headline_pct)
     print(f"{merged_menu_bar_mini(session_pct, week_pct, mode)} | color={color} font=Menlo size=12")
 
     print("---")
 
     # ── Session (5h) ──
     pct = five_hour.get("utilization", 0)
-    c = color_for_pct(pct)
+    c = "#44BB44" if mode == MODE_COLOR_SPLIT else color_for_pct(pct)
     bar = progress_bar(pct)
     resets = time_until(five_hour.get("resets_at"))
     print(f"Session (5h)     {bar} {pct:.0f}% | font=Menlo size=13 color={c}")
-    print(f"  Resets in {resets} | font=Menlo size=11 color=gray")
+    print(f"  Resets in {resets} | font=Menlo size=11 color=#444444")
 
     print("---")
 
     # ── Week (all models) ──
     pct = seven_day.get("utilization", 0)
-    c = color_for_pct(pct)
+    c = "#4488FF" if mode == MODE_COLOR_SPLIT else color_for_pct(pct)
     bar = progress_bar(pct)
     resets = time_until(seven_day.get("resets_at"))
     print(f"Week (all)       {bar} {pct:.0f}% | font=Menlo size=13 color={c}")
-    print(f"  Resets in {resets} | font=Menlo size=11 color=gray")
+    print(f"  Resets in {resets} | font=Menlo size=11 color=#444444")
 
     print("---")
 
@@ -228,7 +247,7 @@ def render(data):
     bar = progress_bar(pct)
     resets = time_until(seven_day_sonnet.get("resets_at"))
     print(f"Week (Sonnet)    {bar} {pct:.0f}% | font=Menlo size=13 color={c}")
-    print(f"  Resets in {resets} | font=Menlo size=11 color=gray")
+    print(f"  Resets in {resets} | font=Menlo size=11 color=#444444")
 
     # ── Extra Usage (if enabled) ──
     if extra.get("is_enabled"):
@@ -245,10 +264,17 @@ def render(data):
 
     # ── Display Mode (read-only, changed via standalone app) ──
     print("---")
-    mode_label = "Color Split" if mode == MODE_COLOR_SPLIT else "Marker"
-    print(f"Mode: {mode_label} | font=Menlo size=11 color=gray")
+    mode_labels = {
+        MODE_SESSION: "Session",
+        MODE_WEEK: "Week",
+        MODE_HIGHEST: "Highest",
+        MODE_COLOR_SPLIT: "Color Split",
+        MODE_MARKER: "Marker",
+    }
+    mode_label = mode_labels.get(mode, mode)
+    print(f"Mode: {mode_label} | font=Menlo size=11 color=#444444")
     if mode == MODE_MARKER:
-        print("  bar = session  ┃│ = week | font=Menlo size=11 color=gray")
+        print("  bar = session  ┃│ = week | font=Menlo size=11 color=#444444")
 
     print("---")
     print("Refresh | refresh=true")
