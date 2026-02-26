@@ -8,6 +8,7 @@ Filename encodes 5-minute refresh interval for SwiftBar.
 """
 
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -16,9 +17,19 @@ import urllib.request
 import urllib.error
 from datetime import datetime, timezone
 
+log_level = os.environ.get("CLAUDE_USAGE_LOG", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, log_level, logging.INFO),
+    format="%(asctime)s %(name)s %(levelname)s %(message)s",
+)
+logger = logging.getLogger(__name__)
+
 BASE_API_URL = "https://api.anthropic.com"
 KEYCHAIN_SERVICE = "Claude Code-credentials"
-CLAUDE_BIN = shutil.which("claude")
+OAUTH_TOKEN_URL = "https://console.anthropic.com/v1/oauth/token"
+# Public OAuth client ID used by Claude Code (not a secret — public clients
+# cannot maintain confidentiality per RFC 6749 §2.1).
+OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 
 CONFIG_DIR = os.path.expanduser("~/.config/claude_usage")
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
@@ -32,11 +43,11 @@ DEFAULT_MODE = MODE_MARKER
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
-def get_access_token():
-    """Read the OAuth access token from the macOS Keychain."""
+def get_credentials():
+    """Read and parse the full credential dict from macOS Keychain."""
     result = subprocess.run(
         ["security", "find-generic-password", "-s", KEYCHAIN_SERVICE, "-w"],
-        capture_output=True, text=True,
+        capture_output=True, text=True, timeout=15,
     )
     if result.returncode != 0:
         return None
@@ -48,24 +59,136 @@ def get_access_token():
     try:
         creds = json.loads(raw)
     except json.JSONDecodeError:
-        return raw if raw else None
+        return None
 
     if not isinstance(creds, dict):
         return None
 
-    # Top-level token
-    for key in ("accessToken", "access_token"):
+    logger.debug("Keychain JSON keys: %s", list(creds.keys()))
+    for k, v in creds.items():
+        if isinstance(v, dict):
+            logger.debug("  nested '%s' keys: %s", k, list(v.keys()))
+
+    return creds
+
+
+def _extract_field(creds, *key_names):
+    """Search for a field in credentials, checking top-level then nested dicts."""
+    if creds is None:
+        return None
+    for key in key_names:
         if key in creds:
             return creds[key]
-
-    # Nested under claudeAiOauth or similar
     for obj in creds.values():
         if isinstance(obj, dict):
-            for key in ("accessToken", "access_token"):
+            for key in key_names:
                 if key in obj:
                     return obj[key]
-
     return None
+
+
+def get_access_token():
+    """Read the OAuth access token from credentials."""
+    creds = get_credentials()
+    token = _extract_field(creds, "accessToken", "access_token")
+    if creds is not None and token is None:
+        logger.warning("Keychain credentials present but no access token found")
+    return token
+
+
+def get_refresh_token():
+    """Read the OAuth refresh token from credentials."""
+    creds = get_credentials()
+    return _extract_field(creds, "refreshToken", "refresh_token")
+
+
+def refresh_oauth_token(refresh_token):
+    """Exchange a refresh token for new access + refresh tokens."""
+    payload = json.dumps({
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token,
+        "client_id": OAUTH_CLIENT_ID,
+    }).encode()
+
+    req = urllib.request.Request(
+        OAUTH_TOKEN_URL,
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "Claude-Usage-Bar/1.0",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            body = resp.read().decode()
+            return json.loads(body), None
+    except urllib.error.HTTPError as e:
+        err_body = ""
+        try:
+            err_body = e.read().decode()[:200]
+        except Exception:
+            pass
+        return None, f"HTTP {e.code}: {err_body}" if err_body else f"HTTP {e.code}"
+    except urllib.error.URLError as e:
+        return None, f"URL error: {e.reason}"
+    except Exception as e:
+        return None, f"{type(e).__name__}: {e}"
+
+
+def write_credentials(creds_dict):
+    """Write credentials back to the macOS Keychain."""
+    creds_json = json.dumps(creds_dict)
+    try:
+        result = subprocess.run(
+            ["security", "add-generic-password",
+             "-s", KEYCHAIN_SERVICE,
+             "-a", "",
+             "-w", creds_json,
+             "-U"],
+            capture_output=True, text=True, timeout=10,
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
+def find_claude():
+    """Resolve the claude binary path."""
+    found = shutil.which("claude")
+    if found:
+        return found
+    for path in [
+        os.path.expanduser("~/.local/bin/claude"),
+        os.path.expanduser("~/.claude/local/claude"),
+        "/usr/local/bin/claude",
+        "/opt/homebrew/bin/claude",
+    ]:
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+    return None
+
+
+def _cli_refresh_fallback():
+    """Fallback: trigger a token refresh via a lightweight Claude CLI prompt."""
+    claude_bin = find_claude()
+    if not claude_bin:
+        logger.warning("Cannot refresh via CLI: Claude CLI not found")
+        return False
+    logger.debug("Running CLI fallback refresh: %s", claude_bin)
+    try:
+        result = subprocess.run(
+            [claude_bin, "-p", "one char response."],
+            capture_output=True, timeout=15,
+        )
+    except subprocess.TimeoutExpired:
+        logger.warning("CLI fallback refresh timed out after 15s")
+        return False
+    if result.returncode != 0:
+        logger.warning("CLI fallback refresh failed (exit %d)", result.returncode)
+        return False
+    logger.debug("CLI fallback refresh succeeded")
+    return True
 
 
 def fetch_usage(token):
@@ -280,19 +403,51 @@ def render(data):
     print("Refresh | refresh=true")
 
 
-def trigger_claude_refresh():
-    """Trigger a token refresh via a lightweight Claude CLI prompt.
+def trigger_token_refresh():
+    """Refresh the OAuth token directly, falling back to CLI if needed."""
+    creds = get_credentials()
+    refresh_token = _extract_field(creds, "refreshToken", "refresh_token")
 
-    Uses ``claude -p`` as a workaround because ``claude auth status`` no
-    longer refreshes expired tokens.  See issue #17 for a proper fix.
-    """
-    if not CLAUDE_BIN:
-        return False
-    result = subprocess.run(
-        [CLAUDE_BIN, "-p", "one char response."],
-        capture_output=True, timeout=15,
-    )
-    return result.returncode == 0
+    if not refresh_token:
+        logger.info("No refresh token found, falling back to CLI refresh")
+        return _cli_refresh_fallback()
+
+    logger.info("Attempting direct OAuth token refresh")
+    new_tokens, err = refresh_oauth_token(refresh_token)
+    if err or not new_tokens or "access_token" not in new_tokens:
+        logger.warning("Direct token refresh failed: %s — falling back to CLI", err)
+        return _cli_refresh_fallback()
+
+    target = creds
+    for obj in creds.values():
+        if isinstance(obj, dict) and (
+            "accessToken" in obj or "access_token" in obj
+            or "refreshToken" in obj or "refresh_token" in obj
+        ):
+            target = obj
+            break
+
+    if "access_token" in new_tokens:
+        if "accessToken" in target:
+            target["accessToken"] = new_tokens["access_token"]
+        else:
+            target["access_token"] = new_tokens["access_token"]
+    if "refresh_token" in new_tokens:
+        if "refreshToken" in target:
+            target["refreshToken"] = new_tokens["refresh_token"]
+        else:
+            target["refresh_token"] = new_tokens["refresh_token"]
+    if "expires_in" in new_tokens:
+        target["expiresIn"] = new_tokens["expires_in"]
+    if "expires_at" in new_tokens:
+        target["expiresAt"] = new_tokens["expires_at"]
+
+    if not write_credentials(creds):
+        logger.warning("Failed to write refreshed credentials, falling back to CLI")
+        return _cli_refresh_fallback()
+
+    logger.info("Direct token refresh succeeded")
+    return True
 
 
 def main():
@@ -305,7 +460,7 @@ def main():
 
     # If the token is expired, ask Claude Code to refresh and retry once
     if api_err == "auth_expired":
-        if trigger_claude_refresh():
+        if trigger_token_refresh():
             token = get_access_token()
             if token:
                 data, api_err = fetch_usage(token)
