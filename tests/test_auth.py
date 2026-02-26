@@ -1,10 +1,7 @@
 """Tests for auth credential reading and OAuth token refresh logic."""
 
 import json
-import subprocess
 from unittest import mock
-
-import pytest
 
 from claude_usage.core import (
     KEYCHAIN_SERVICE,
@@ -221,33 +218,19 @@ class TestRefreshOAuthToken:
 class TestWriteCredentials:
     @mock.patch("claude_usage.core.subprocess.run")
     def test_success(self, mock_run):
-        # Both delete and add succeed
         mock_run.return_value = mock.MagicMock(returncode=0, stderr="")
         result = write_credentials({"accessToken": "tok"})
         assert result is True
-        assert mock_run.call_count == 2
+        assert mock_run.call_count == 1
 
-        # First call: delete
-        delete_call = mock_run.call_args_list[0]
-        assert "delete-generic-password" in delete_call[0][0]
-
-        # Second call: add
-        add_call = mock_run.call_args_list[1]
+        # Single atomic upsert via -U flag
+        add_call = mock_run.call_args_list[0]
         assert "add-generic-password" in add_call[0][0]
+        assert "-U" in add_call[0][0]
 
     @mock.patch("claude_usage.core.subprocess.run")
     def test_add_failure(self, mock_run):
-        # Delete succeeds, add fails
-        def side_effect(cmd, **kwargs):
-            r = mock.MagicMock()
-            if "add-generic-password" in cmd:
-                r.returncode = 1
-                r.stderr = "error"
-            else:
-                r.returncode = 0
-                r.stderr = ""
-            return r
-        mock_run.side_effect = side_effect
+        mock_run.return_value = mock.MagicMock(returncode=1, stderr="error")
         result = write_credentials({"accessToken": "tok"})
         assert result is False
 

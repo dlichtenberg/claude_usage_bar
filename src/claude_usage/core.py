@@ -105,6 +105,8 @@ def get_refresh_token():
 
 
 OAUTH_TOKEN_URL = "https://console.anthropic.com/v1/oauth/token"
+# Public OAuth client ID used by Claude Code (not a secret — public clients
+# cannot maintain confidentiality per RFC 6749 §2.1).
 OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 
 
@@ -155,17 +157,12 @@ def refresh_oauth_token(refresh_token):
 def write_credentials(creds_dict):
     """Write credentials back to the macOS Keychain.
 
-    Deletes the old entry and adds a new one so Claude CLI stays in sync.
+    Uses ``-U`` (update-or-add) for an atomic upsert so Claude CLI stays
+    in sync and there is no window where credentials are absent.
     Returns True on success, False on failure.
     """
     creds_json = json.dumps(creds_dict)
     try:
-        # Delete old entry (ignore errors if it doesn't exist)
-        subprocess.run(
-            ["security", "delete-generic-password", "-s", KEYCHAIN_SERVICE],
-            capture_output=True, timeout=10,
-        )
-        # Add new entry
         result = subprocess.run(
             ["security", "add-generic-password",
              "-s", KEYCHAIN_SERVICE,
@@ -271,13 +268,13 @@ def trigger_token_refresh():
     # 2. Exchange refresh token for new tokens
     logger.info("Attempting direct OAuth token refresh")
     new_tokens, err = refresh_oauth_token(refresh_token)
-    if err or not new_tokens:
+    if err or not new_tokens or "access_token" not in new_tokens:
         logger.warning("Direct token refresh failed: %s — falling back to CLI", err)
         return _cli_refresh_fallback()
 
     # 3. Merge new tokens into existing credential dict
-    if creds is None:
-        creds = {}
+    # (creds is guaranteed non-None here — otherwise refresh_token would
+    # have been None and we'd have returned via the fallback above.)
 
     # Update top-level or nested depending on where the token was found
     target = creds

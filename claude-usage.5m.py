@@ -27,6 +27,8 @@ logger = logging.getLogger(__name__)
 BASE_API_URL = "https://api.anthropic.com"
 KEYCHAIN_SERVICE = "Claude Code-credentials"
 OAUTH_TOKEN_URL = "https://console.anthropic.com/v1/oauth/token"
+# Public OAuth client ID used by Claude Code (not a secret — public clients
+# cannot maintain confidentiality per RFC 6749 §2.1).
 OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 
 CONFIG_DIR = os.path.expanduser("~/.config/claude_usage")
@@ -88,7 +90,10 @@ def _extract_field(creds, *key_names):
 def get_access_token():
     """Read the OAuth access token from credentials."""
     creds = get_credentials()
-    return _extract_field(creds, "accessToken", "access_token")
+    token = _extract_field(creds, "accessToken", "access_token")
+    if creds is not None and token is None:
+        logger.warning("Keychain credentials present but no access token found")
+    return token
 
 
 def get_refresh_token():
@@ -135,10 +140,6 @@ def write_credentials(creds_dict):
     """Write credentials back to the macOS Keychain."""
     creds_json = json.dumps(creds_dict)
     try:
-        subprocess.run(
-            ["security", "delete-generic-password", "-s", KEYCHAIN_SERVICE],
-            capture_output=True, timeout=10,
-        )
         result = subprocess.run(
             ["security", "add-generic-password",
              "-s", KEYCHAIN_SERVICE,
@@ -172,15 +173,22 @@ def _cli_refresh_fallback():
     """Fallback: trigger a token refresh via a lightweight Claude CLI prompt."""
     claude_bin = find_claude()
     if not claude_bin:
+        logger.warning("Cannot refresh via CLI: Claude CLI not found")
         return False
+    logger.debug("Running CLI fallback refresh: %s", claude_bin)
     try:
         result = subprocess.run(
             [claude_bin, "-p", "one char response."],
             capture_output=True, timeout=15,
         )
-        return result.returncode == 0
     except subprocess.TimeoutExpired:
+        logger.warning("CLI fallback refresh timed out after 15s")
         return False
+    if result.returncode != 0:
+        logger.warning("CLI fallback refresh failed (exit %d)", result.returncode)
+        return False
+    logger.debug("CLI fallback refresh succeeded")
+    return True
 
 
 def fetch_usage(token):
@@ -401,14 +409,14 @@ def trigger_token_refresh():
     refresh_token = _extract_field(creds, "refreshToken", "refresh_token")
 
     if not refresh_token:
+        logger.info("No refresh token found, falling back to CLI refresh")
         return _cli_refresh_fallback()
 
+    logger.info("Attempting direct OAuth token refresh")
     new_tokens, err = refresh_oauth_token(refresh_token)
-    if err or not new_tokens:
+    if err or not new_tokens or "access_token" not in new_tokens:
+        logger.warning("Direct token refresh failed: %s — falling back to CLI", err)
         return _cli_refresh_fallback()
-
-    if creds is None:
-        creds = {}
 
     target = creds
     for obj in creds.values():
@@ -435,8 +443,10 @@ def trigger_token_refresh():
         target["expiresAt"] = new_tokens["expires_at"]
 
     if not write_credentials(creds):
+        logger.warning("Failed to write refreshed credentials, falling back to CLI")
         return _cli_refresh_fallback()
 
+    logger.info("Direct token refresh succeeded")
     return True
 
 
