@@ -60,6 +60,16 @@ If you prefer [SwiftBar](https://github.com/swiftbar/SwiftBar):
    chmod +x claude-usage.5m.py
    ```
 
+## Debugging
+
+Set `CLAUDE_USAGE_LOG` to control log verbosity when running from Terminal:
+
+```sh
+CLAUDE_USAGE_LOG=DEBUG claude-usage-bar
+```
+
+Levels: `DEBUG`, `INFO` (default), `WARNING`, `ERROR`.
+
 ## Requirements
 
 - Python 3.10+

@@ -281,11 +281,15 @@ def render(data):
 
 
 def trigger_claude_refresh():
-    """Ask Claude Code to refresh its own tokens via `claude auth status`."""
+    """Trigger a token refresh via a lightweight Claude CLI prompt.
+
+    Uses ``claude -p`` as a workaround because ``claude auth status`` no
+    longer refreshes expired tokens.  See issue #17 for a proper fix.
+    """
     if not CLAUDE_BIN:
         return False
     result = subprocess.run(
-        [CLAUDE_BIN, "auth", "status"],
+        [CLAUDE_BIN, "-p", "one char response."],
         capture_output=True, timeout=15,
     )
     return result.returncode == 0
