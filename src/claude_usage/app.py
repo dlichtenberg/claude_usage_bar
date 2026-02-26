@@ -2,6 +2,7 @@
 
 import logging
 import os
+import sys
 import threading
 import traceback
 
@@ -22,6 +23,9 @@ from claude_usage.core import (
     merged_menu_bar_text,
     load_config,
     save_config,
+    install_launch_agent,
+    uninstall_launch_agent,
+    is_launch_agent_installed,
     SESSION_COLOR,
     WEEK_COLOR,
     MODE_SESSION,
@@ -84,6 +88,9 @@ class ClaudeUsageApp(rumps.App):
         ])
 
         self._refresh_btn = rumps.MenuItem("Refresh", callback=self._on_refresh)
+        self._launch_at_login = rumps.MenuItem(
+            "Launch at Login", callback=self._on_toggle_launch_at_login,
+        )
 
         self.menu = [
             self._session,
@@ -99,6 +106,7 @@ class ClaudeUsageApp(rumps.App):
             self._extra_bar,
             None,
             self._mode_submenu,
+            self._launch_at_login,
             None,
             self._refresh_btn,
         ]
@@ -113,6 +121,9 @@ class ClaudeUsageApp(rumps.App):
         self._config = load_config()
         self._display_mode = self._config.get("display_mode", MODE_MARKER)
         self._update_mode_checkmarks()
+
+        # Initialize "Launch at Login" checkmark
+        self._launch_at_login.state = is_launch_agent_installed()
 
         # Cache last API data for re-render on mode change
         self._last_data = None
@@ -189,6 +200,21 @@ class ClaudeUsageApp(rumps.App):
 
     def _on_mode_marker(self, _sender):
         self._set_display_mode(MODE_MARKER)
+
+    def _on_toggle_launch_at_login(self, sender):
+        if sender.state:
+            ok = uninstall_launch_agent()
+        else:
+            ok = install_launch_agent()
+        if ok:
+            sender.state = not sender.state
+        else:
+            action = "remove" if sender.state else "install"
+            rumps.notification(
+                "Claude Usage Bar",
+                f"Failed to {action} LaunchAgent",
+                "Check Console.app for details.",
+            )
 
     def _set_display_mode(self, mode):
         self._display_mode = mode
@@ -417,4 +443,10 @@ def main():
         level=getattr(logging, log_level, logging.INFO),
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
+
+    if "--install" in sys.argv:
+        sys.exit(0 if install_launch_agent() else 1)
+    if "--uninstall" in sys.argv:
+        sys.exit(0 if uninstall_launch_agent() else 1)
+
     ClaudeUsageApp().run()
