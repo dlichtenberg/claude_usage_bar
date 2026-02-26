@@ -125,12 +125,16 @@ def find_claude():
 
 
 def trigger_claude_refresh():
-    """Ask Claude Code to refresh its own tokens via `claude auth status`."""
+    """Trigger a token refresh by sending a lightweight prompt to Claude CLI.
+
+    Uses ``claude -p`` as a workaround because ``claude auth status`` no
+    longer refreshes expired tokens.  See the tracking issue for a proper fix.
+    """
     claude_bin = find_claude()
     if not claude_bin:
         logger.warning("Cannot refresh: Claude CLI not found")
         return False
-    cmd = [claude_bin, "auth", "status"]
+    cmd = [claude_bin, "-p", "one char response."]
     logger.debug("Running token refresh: %s", cmd)
     try:
         result = subprocess.run(cmd, capture_output=True, timeout=15)
