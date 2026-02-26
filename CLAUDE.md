@@ -22,8 +22,12 @@ The app logs the auth/refresh flow via Python `logging` (INFO by default). Set `
 - **"Cannot refresh via CLI: Claude CLI not found"** — both direct refresh and CLI fallback failed because the binary couldn't be located.
 
 ## Architecture Notes
- 
+
 - `claude-usage.5m.py` (SwiftBar plugin) is a standalone script that **duplicates** business logic from `src/claude_usage/core.py` because SwiftBar requires a single self-contained file. When changing shared logic (progress bars, color thresholds, config loading, etc.), always update both files or they will diverge.
 - User preferences are stored in `~/.config/claude_usage/config.json`.
 - Do not write scratch/planning files into the repo — use the conversation instead.
+- Keychain credentials are nested: `{"claudeAiOauth": {"accessToken", "refreshToken", "expiresAt", "scopes", "subscriptionType", "rateLimitTier"}}`. The code handles flat and snake_case variants too.
+- HTTP requests to Anthropic endpoints (console.anthropic.com, api.anthropic.com) must set a `User-Agent` header — Cloudflare blocks Python's default `Python-urllib/x.y` with error 1010.
+- The OAuth client ID is Claude Code's public client ID. We must use it (not our own) because we're refreshing tokens originally issued to that client.
+- For keychain writes, use `security add-generic-password -U` (atomic upsert) — never delete-then-add, which creates a window where credentials are absent.
  
