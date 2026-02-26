@@ -31,8 +31,11 @@ MODE_MARKER = "marker"
 DEFAULT_MODE = MODE_MARKER
 
 
-def get_access_token():
-    """Read the OAuth access token from the macOS Keychain."""
+def get_credentials():
+    """Read and parse the full credential dict from macOS Keychain.
+
+    Returns the parsed dict, or None if credentials are missing / invalid.
+    """
     result = subprocess.run(
         ["security", "find-generic-password", "-s", KEYCHAIN_SERVICE, "-w"],
         capture_output=True, text=True, timeout=15,
@@ -49,29 +52,137 @@ def get_access_token():
     try:
         creds = json.loads(raw)
     except json.JSONDecodeError:
-        logger.debug("Keychain value is not JSON, using as raw token")
-        return raw  # guaranteed non-empty by check above
+        logger.debug("Keychain value is not JSON")
+        return None
 
     if not isinstance(creds, dict):
         logger.debug("Keychain JSON is not a dict")
         return None
 
-    # Top-level token
-    for key in ("accessToken", "access_token"):
+    logger.debug("Keychain JSON keys: %s", list(creds.keys()))
+    for k, v in creds.items():
+        if isinstance(v, dict):
+            logger.debug("  nested '%s' keys: %s", k, list(v.keys()))
+
+    return creds
+
+
+def _extract_field(creds, *key_names):
+    """Search for a field in credentials, checking top-level then nested dicts."""
+    if creds is None:
+        return None
+
+    # Top-level
+    for key in key_names:
         if key in creds:
-            logger.debug("Found token under top-level key '%s'", key)
+            logger.debug("Found field under top-level key '%s'", key)
             return creds[key]
 
     # Nested under claudeAiOauth or similar
     for obj in creds.values():
         if isinstance(obj, dict):
-            for key in ("accessToken", "access_token"):
+            for key in key_names:
                 if key in obj:
-                    logger.debug("Found token under nested key '%s'", key)
+                    logger.debug("Found field under nested key '%s'", key)
                     return obj[key]
 
-    logger.warning("Keychain credentials present but no access token found")
     return None
+
+
+def get_access_token():
+    """Read the OAuth access token from credentials."""
+    creds = get_credentials()
+    token = _extract_field(creds, "accessToken", "access_token")
+    if creds is not None and token is None:
+        logger.warning("Keychain credentials present but no access token found")
+    return token
+
+
+def get_refresh_token():
+    """Read the OAuth refresh token from credentials."""
+    creds = get_credentials()
+    return _extract_field(creds, "refreshToken", "refresh_token")
+
+
+OAUTH_TOKEN_URL = "https://console.anthropic.com/v1/oauth/token"
+OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+
+
+def refresh_oauth_token(refresh_token):
+    """Exchange a refresh token for new access + refresh tokens.
+
+    Returns (new_tokens_dict, error_string). On success the dict contains
+    at least ``access_token`` and ``refresh_token``.
+    """
+    payload = json.dumps({
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token,
+        "client_id": OAUTH_CLIENT_ID,
+    }).encode()
+
+    req = urllib.request.Request(
+        OAUTH_TOKEN_URL,
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "Claude-Usage-Bar/1.0",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            body = resp.read().decode()
+            data = json.loads(body)
+            logger.debug("OAuth token refresh succeeded")
+            return data, None
+    except urllib.error.HTTPError as e:
+        err_body = ""
+        try:
+            err_body = e.read().decode()[:200]
+        except Exception:
+            pass
+        msg = f"HTTP {e.code}: {err_body}" if err_body else f"HTTP {e.code}"
+        logger.warning("OAuth token refresh HTTP error: %s", msg)
+        return None, msg
+    except urllib.error.URLError as e:
+        logger.warning("OAuth token refresh URL error: %s", e.reason)
+        return None, f"URL error: {e.reason}"
+    except Exception as e:
+        logger.warning("OAuth token refresh error: %s", e)
+        return None, f"{type(e).__name__}: {e}"
+
+
+def write_credentials(creds_dict):
+    """Write credentials back to the macOS Keychain.
+
+    Deletes the old entry and adds a new one so Claude CLI stays in sync.
+    Returns True on success, False on failure.
+    """
+    creds_json = json.dumps(creds_dict)
+    try:
+        # Delete old entry (ignore errors if it doesn't exist)
+        subprocess.run(
+            ["security", "delete-generic-password", "-s", KEYCHAIN_SERVICE],
+            capture_output=True, timeout=10,
+        )
+        # Add new entry
+        result = subprocess.run(
+            ["security", "add-generic-password",
+             "-s", KEYCHAIN_SERVICE,
+             "-a", "",
+             "-w", creds_json,
+             "-U"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode != 0:
+            logger.warning("Keychain write failed (exit %d): %s",
+                           result.returncode, result.stderr.strip())
+            return False
+        logger.debug("Credentials written to keychain")
+        return True
+    except Exception as e:
+        logger.warning("Keychain write error: %s", e)
+        return False
 
 
 def fetch_usage(token):
@@ -124,32 +235,82 @@ def find_claude():
     return None
 
 
-def trigger_claude_refresh():
-    """Trigger a token refresh by sending a lightweight prompt to Claude CLI.
-
-    Uses ``claude -p`` as a workaround because ``claude auth status`` no
-    longer refreshes expired tokens.  See the tracking issue for a proper fix.
-    """
+def _cli_refresh_fallback():
+    """Fallback: trigger a token refresh via a lightweight Claude CLI prompt."""
     claude_bin = find_claude()
     if not claude_bin:
-        logger.warning("Cannot refresh: Claude CLI not found")
+        logger.warning("Cannot refresh via CLI: Claude CLI not found")
         return False
     cmd = [claude_bin, "-p", "one char response."]
-    logger.debug("Running token refresh: %s", cmd)
+    logger.debug("Running CLI fallback refresh: %s", cmd)
     try:
         result = subprocess.run(cmd, capture_output=True, timeout=15)
     except subprocess.TimeoutExpired:
-        logger.warning("Token refresh timed out after 15s")
+        logger.warning("CLI fallback refresh timed out after 15s")
         return False
     if result.returncode != 0:
-        logger.warning("Token refresh failed (exit %d)", result.returncode)
-        logger.debug(
-            "Token refresh output: stdout=%s stderr=%s",
-            result.stdout[:200] if result.stdout else b"",
-            result.stderr[:200] if result.stderr else b"",
-        )
+        logger.warning("CLI fallback refresh failed (exit %d)", result.returncode)
         return False
-    logger.debug("Token refresh succeeded")
+    logger.debug("CLI fallback refresh succeeded")
+    return True
+
+
+def trigger_token_refresh():
+    """Refresh the OAuth token directly via the Anthropic token endpoint.
+
+    Falls back to Claude CLI prompt if direct refresh fails.
+    """
+    # 1. Get current credentials and refresh token
+    creds = get_credentials()
+    refresh_token = _extract_field(creds, "refreshToken", "refresh_token")
+
+    if not refresh_token:
+        logger.info("No refresh token found, falling back to CLI refresh")
+        return _cli_refresh_fallback()
+
+    # 2. Exchange refresh token for new tokens
+    logger.info("Attempting direct OAuth token refresh")
+    new_tokens, err = refresh_oauth_token(refresh_token)
+    if err or not new_tokens:
+        logger.warning("Direct token refresh failed: %s — falling back to CLI", err)
+        return _cli_refresh_fallback()
+
+    # 3. Merge new tokens into existing credential dict
+    if creds is None:
+        creds = {}
+
+    # Update top-level or nested depending on where the token was found
+    target = creds
+    for obj in creds.values():
+        if isinstance(obj, dict) and (
+            "accessToken" in obj or "access_token" in obj
+            or "refreshToken" in obj or "refresh_token" in obj
+        ):
+            target = obj
+            break
+
+    # Map OAuth response fields to credential keys
+    if "access_token" in new_tokens:
+        if "accessToken" in target:
+            target["accessToken"] = new_tokens["access_token"]
+        else:
+            target["access_token"] = new_tokens["access_token"]
+    if "refresh_token" in new_tokens:
+        if "refreshToken" in target:
+            target["refreshToken"] = new_tokens["refresh_token"]
+        else:
+            target["refresh_token"] = new_tokens["refresh_token"]
+    if "expires_in" in new_tokens:
+        target["expiresIn"] = new_tokens["expires_in"]
+    if "expires_at" in new_tokens:
+        target["expiresAt"] = new_tokens["expires_at"]
+
+    # 4. Write back to keychain
+    if not write_credentials(creds):
+        logger.warning("Failed to write refreshed credentials, falling back to CLI")
+        return _cli_refresh_fallback()
+
+    logger.info("Direct token refresh succeeded")
     return True
 
 

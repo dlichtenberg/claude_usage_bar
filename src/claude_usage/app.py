@@ -11,7 +11,7 @@ from PyObjCTools import AppHelper
 from claude_usage.core import (
     get_access_token,
     fetch_usage,
-    trigger_claude_refresh,
+    trigger_token_refresh,
     find_claude,
     time_until,
     color_hex_for_pct,
@@ -231,8 +231,8 @@ class ClaudeUsageApp(rumps.App):
 
                 # If token expired, try refreshing and retry once
                 if err == "auth_expired":
-                    logger.info("Token expired, attempting refresh via Claude CLI")
-                    if trigger_claude_refresh():
+                    logger.info("Token expired, attempting refresh")
+                    if trigger_token_refresh():
                         logger.info("Refresh succeeded, retrying usage fetch")
                         token = get_access_token()
                         if token:
