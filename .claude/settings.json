@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "WorktreeCreate": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv venv --python 3.12 && uv pip install -e . pytest"
+          }
+        ]
+      }
+    ]
+  }
+}
