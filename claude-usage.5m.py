@@ -10,12 +10,14 @@ Filename encodes 5-minute refresh interval for SwiftBar.
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
+import time
 import urllib.request
 import urllib.error
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 log_level = os.environ.get("CLAUDE_USAGE_LOG", "INFO").upper()
 logging.basicConfig(
@@ -70,6 +72,21 @@ def get_credentials():
             logger.debug("  nested '%s' keys: %s", k, list(v.keys()))
 
     return creds
+
+
+def get_keychain_account():
+    """Discover the account name used by the existing keychain entry."""
+    try:
+        result = subprocess.run(
+            ["security", "find-generic-password", "-s", KEYCHAIN_SERVICE],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode != 0:
+            return ""
+        m = re.search(r'"acct"<blob>="(.*?)"', result.stdout)
+        return m.group(1) if m else ""
+    except Exception:
+        return ""
 
 
 def _extract_field(creds, *key_names):
@@ -136,14 +153,16 @@ def refresh_oauth_token(refresh_token):
         return None, f"{type(e).__name__}: {e}"
 
 
-def write_credentials(creds_dict):
+def write_credentials(creds_dict, account=None):
     """Write credentials back to the macOS Keychain."""
+    if account is None:
+        account = get_keychain_account()
     creds_json = json.dumps(creds_dict)
     try:
         result = subprocess.run(
             ["security", "add-generic-password",
              "-s", KEYCHAIN_SERVICE,
-             "-a", "",
+             "-a", account,
              "-w", creds_json,
              "-U"],
             capture_output=True, text=True, timeout=10,
@@ -403,8 +422,15 @@ def render(data):
     print("Refresh | refresh=true")
 
 
+WRITE_RETRIES = 3
+
+
 def trigger_token_refresh():
-    """Refresh the OAuth token directly, falling back to CLI if needed."""
+    """Refresh the OAuth token directly, falling back to CLI if needed.
+
+    After a successful OAuth exchange the old refresh token is consumed,
+    so CLI fallback cannot help — we retry the keychain write instead.
+    """
     creds = get_credentials()
     refresh_token = _extract_field(creds, "refreshToken", "refresh_token")
 
@@ -412,11 +438,16 @@ def trigger_token_refresh():
         logger.info("No refresh token found, falling back to CLI refresh")
         return _cli_refresh_fallback()
 
+    # Discover account before consuming the refresh token
+    account = get_keychain_account()
+
     logger.info("Attempting direct OAuth token refresh")
     new_tokens, err = refresh_oauth_token(refresh_token)
     if err or not new_tokens or "access_token" not in new_tokens:
         logger.warning("Direct token refresh failed: %s — falling back to CLI", err)
         return _cli_refresh_fallback()
+
+    # ── Point of no return: old refresh token is now consumed ──
 
     target = creds
     for obj in creds.values():
@@ -437,17 +468,31 @@ def trigger_token_refresh():
             target["refreshToken"] = new_tokens["refresh_token"]
         else:
             target["refresh_token"] = new_tokens["refresh_token"]
-    if "expires_in" in new_tokens:
-        target["expiresIn"] = new_tokens["expires_in"]
+
+    # Compute expiresAt from expires_in (OAuth returns seconds, not a timestamp)
+    expires_in = new_tokens.get("expires_in")
+    if expires_in is not None:
+        target["expiresIn"] = expires_in
+        target["expiresAt"] = (
+            datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+        ).isoformat()
     if "expires_at" in new_tokens:
         target["expiresAt"] = new_tokens["expires_at"]
 
-    if not write_credentials(creds):
-        logger.warning("Failed to write refreshed credentials, falling back to CLI")
-        return _cli_refresh_fallback()
+    # Retry keychain write since old token is already gone
+    for attempt in range(1, WRITE_RETRIES + 1):
+        if write_credentials(creds, account=account):
+            logger.info("Direct token refresh succeeded")
+            return True
+        logger.warning("Keychain write attempt %d/%d failed", attempt, WRITE_RETRIES)
+        if attempt < WRITE_RETRIES:
+            time.sleep(0.5)
 
-    logger.info("Direct token refresh succeeded")
-    return True
+    logger.error(
+        "All %d keychain write attempts failed after successful OAuth refresh; "
+        "user must re-authenticate via Claude Code", WRITE_RETRIES,
+    )
+    return False
 
 
 def main():
