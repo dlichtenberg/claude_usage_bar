@@ -21,8 +21,8 @@ logger = logging.getLogger(__name__)
 BASE_API_URL = "https://api.anthropic.com"
 KEYCHAIN_SERVICE = "Claude Code-credentials"
 
-SESSION_COLOR = "#44BB44"  # green
-WEEK_COLOR = "#4488FF"     # blue
+SESSION_COLOR = "#d97757"  # brand orange
+WEEK_COLOR = "#788c5d"     # brand green
 
 CONFIG_DIR = os.path.expanduser("~/.config/claude_usage")
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
@@ -398,9 +398,7 @@ def color_hex_for_pct(pct):
     """Return a color hex string for the given utilization percentage."""
     if pct >= 80:
         return "#FF4444"  # red
-    if pct >= 50:
-        return "#FFAA00"  # amber
-    return "#44BB44"      # green
+    return "#d97757"      # brand orange
 
 
 def progress_bar(pct, width=10):

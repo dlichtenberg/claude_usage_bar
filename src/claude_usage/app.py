@@ -156,23 +156,26 @@ class ClaudeUsageApp(rumps.App):
         segments.extend(cs_segments)
         self._mode_color_split._menuitem.setAttributedTitle_(
             styled_segments(
-                [("Color Split  ", None)] + cs_segments,
+                [("Color Split  ", None, "Poppins")] + cs_segments,
             )
         )
-        # Legend: green = session, blue = week
+        # Legend: orange = session, green = week
         set_inert_title(
             self._mode_color_split_legend._menuitem,
             styled_segments([
                 ("  ", None),
-                ("\u2588 session  ", SESSION_COLOR),
-                ("\u2588 week", WEEK_COLOR),
+                ("\u2588 session  ", SESSION_COLOR, "Poppins"),
+                ("\u2588 week", WEEK_COLOR, "Poppins"),
             ], font_size=11.0),
         )
 
         # Marker: session fill + week marker preview
         marker_bar = marker_progress_bar(s, w, width=8)
         self._mode_marker._menuitem.setAttributedTitle_(
-            styled_string(f"Marker  {marker_bar}")
+            styled_segments([
+                ("Marker  ", None, "Poppins"),
+                (marker_bar, color_hex_for_pct(s)),
+            ])
         )
         set_inert_title(
             self._mode_marker_legend._menuitem,
@@ -299,10 +302,11 @@ class ClaudeUsageApp(rumps.App):
         self._set_title("C: !!", "#FF4444")
         set_inert_title(
             self._session._menuitem,
-            styled_string(f"Error: {msg}", color="#FF4444"),
+            styled_string(f"Error: {msg}", color="#FF4444", font_name="Poppins"),
         )
         hint_attr = (
-            styled_string(f"  {hint}", color="#444444", font_size=11.0)
+            styled_string(f"  {hint}", color="#444444", font_name="Poppins",
+                          font_size=11.0)
             if hint else styled_string("")
         )
         set_inert_title(self._session_reset._menuitem, hint_attr)
@@ -383,7 +387,7 @@ class ClaudeUsageApp(rumps.App):
         c = color_override or color_hex_for_pct(pct)
         resets = time_until(bucket.get("resets_at"))
 
-        segments = [(label, c)]
+        segments = [(label, c, "Poppins")]
         segments.extend(progress_bar_segments(pct, c))
         segments.append((f" {pct:.0f}%", c))
 

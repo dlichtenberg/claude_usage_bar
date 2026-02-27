@@ -265,9 +265,7 @@ def color_for_pct(pct):
     """Return a SwiftBar-compatible color hex for the given percentage."""
     if pct >= 80:
         return "#FF4444"  # red
-    if pct >= 50:
-        return "#FFAA00"  # yellow/amber
-    return "#44BB44"      # green
+    return "#d97757"      # brand orange
 
 
 
@@ -365,7 +363,7 @@ def render(data):
 
     # ── Session (5h) ──
     pct = five_hour.get("utilization", 0)
-    c = "#44BB44" if mode == MODE_COLOR_SPLIT else color_for_pct(pct)
+    c = "#d97757" if mode == MODE_COLOR_SPLIT else color_for_pct(pct)
     bar = progress_bar(pct)
     resets = time_until(five_hour.get("resets_at"))
     print(f"Session (5h)     {bar} {pct:.0f}% | font=Menlo size=13 color={c}")
@@ -375,7 +373,7 @@ def render(data):
 
     # ── Week (all models) ──
     pct = seven_day.get("utilization", 0)
-    c = "#4488FF" if mode == MODE_COLOR_SPLIT else color_for_pct(pct)
+    c = "#788c5d" if mode == MODE_COLOR_SPLIT else color_for_pct(pct)
     bar = progress_bar(pct)
     resets = time_until(seven_day.get("resets_at"))
     print(f"Week (all)       {bar} {pct:.0f}% | font=Menlo size=13 color={c}")
