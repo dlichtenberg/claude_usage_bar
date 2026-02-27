@@ -1,15 +1,18 @@
 """Tests for auth credential reading and OAuth token refresh logic."""
 
 import json
+from datetime import datetime, timedelta, timezone
 from unittest import mock
 
 from claude_usage.core import (
     KEYCHAIN_SERVICE,
     OAUTH_CLIENT_ID,
     OAUTH_TOKEN_URL,
+    WRITE_RETRIES,
     _extract_field,
     get_access_token,
     get_credentials,
+    get_keychain_account,
     get_refresh_token,
     refresh_oauth_token,
     trigger_token_refresh,
@@ -89,6 +92,50 @@ class TestGetCredentials:
         result.stdout = '["a", "b"]'
         mock_run.return_value = result
         assert get_credentials() is None
+
+
+# ── get_keychain_account ──────────────────────────────────────────────────────
+
+class TestGetKeychainAccount:
+    @mock.patch("claude_usage.core.subprocess.run")
+    def test_parses_account_from_metadata(self, mock_run):
+        result = mock.MagicMock()
+        result.returncode = 0
+        result.stdout = (
+            'keychain: "/Users/test/Library/Keychains/login.keychain-db"\n'
+            'class: "genp"\n'
+            'attributes:\n'
+            '    "acct"<blob>="myuser@example.com"\n'
+            '    "svce"<blob>="Claude Code-credentials"\n'
+        )
+        mock_run.return_value = result
+        assert get_keychain_account() == "myuser@example.com"
+
+    @mock.patch("claude_usage.core.subprocess.run")
+    def test_returns_empty_on_missing_entry(self, mock_run):
+        mock_run.return_value = _mock_keychain_fail()
+        assert get_keychain_account() == ""
+
+    @mock.patch("claude_usage.core.subprocess.run")
+    def test_returns_empty_when_no_acct_attribute(self, mock_run):
+        result = mock.MagicMock()
+        result.returncode = 0
+        result.stdout = 'class: "genp"\nattributes:\n    "svce"<blob>="Claude Code-credentials"\n'
+        mock_run.return_value = result
+        assert get_keychain_account() == ""
+
+    @mock.patch("claude_usage.core.subprocess.run")
+    def test_returns_empty_on_exception(self, mock_run):
+        mock_run.side_effect = OSError("keychain locked")
+        assert get_keychain_account() == ""
+
+    @mock.patch("claude_usage.core.subprocess.run")
+    def test_parses_empty_account(self, mock_run):
+        result = mock.MagicMock()
+        result.returncode = 0
+        result.stdout = '    "acct"<blob>=""\n'
+        mock_run.return_value = result
+        assert get_keychain_account() == ""
 
 
 # ── _extract_field ───────────────────────────────────────────────────────────
@@ -216,26 +263,49 @@ class TestRefreshOAuthToken:
 # ── write_credentials ────────────────────────────────────────────────────────
 
 class TestWriteCredentials:
+    @mock.patch("claude_usage.core.get_keychain_account", return_value="discovered-acct")
     @mock.patch("claude_usage.core.subprocess.run")
-    def test_success(self, mock_run):
+    def test_auto_discovers_account(self, mock_run, mock_acct):
         mock_run.return_value = mock.MagicMock(returncode=0, stderr="")
         result = write_credentials({"accessToken": "tok"})
         assert result is True
-        assert mock_run.call_count == 1
+        mock_acct.assert_called_once()
+        cmd = mock_run.call_args[0][0]
+        # -a should use discovered account
+        a_idx = cmd.index("-a")
+        assert cmd[a_idx + 1] == "discovered-acct"
 
-        # Single atomic upsert via -U flag
-        add_call = mock_run.call_args_list[0]
-        assert "add-generic-password" in add_call[0][0]
-        assert "-U" in add_call[0][0]
-
+    @mock.patch("claude_usage.core.get_keychain_account")
     @mock.patch("claude_usage.core.subprocess.run")
-    def test_add_failure(self, mock_run):
+    def test_explicit_account_skips_discovery(self, mock_run, mock_acct):
+        mock_run.return_value = mock.MagicMock(returncode=0, stderr="")
+        result = write_credentials({"accessToken": "tok"}, account="explicit")
+        assert result is True
+        mock_acct.assert_not_called()
+        cmd = mock_run.call_args[0][0]
+        a_idx = cmd.index("-a")
+        assert cmd[a_idx + 1] == "explicit"
+
+    @mock.patch("claude_usage.core.get_keychain_account", return_value="")
+    @mock.patch("claude_usage.core.subprocess.run")
+    def test_fallback_to_empty_account(self, mock_run, mock_acct):
+        mock_run.return_value = mock.MagicMock(returncode=0, stderr="")
+        result = write_credentials({"accessToken": "tok"})
+        assert result is True
+        cmd = mock_run.call_args[0][0]
+        a_idx = cmd.index("-a")
+        assert cmd[a_idx + 1] == ""
+
+    @mock.patch("claude_usage.core.get_keychain_account", return_value="")
+    @mock.patch("claude_usage.core.subprocess.run")
+    def test_add_failure(self, mock_run, _mock_acct):
         mock_run.return_value = mock.MagicMock(returncode=1, stderr="error")
         result = write_credentials({"accessToken": "tok"})
         assert result is False
 
+    @mock.patch("claude_usage.core.get_keychain_account", return_value="")
     @mock.patch("claude_usage.core.subprocess.run")
-    def test_exception(self, mock_run):
+    def test_exception(self, mock_run, _mock_acct):
         mock_run.side_effect = OSError("keychain locked")
         result = write_credentials({"accessToken": "tok"})
         assert result is False
@@ -246,8 +316,9 @@ class TestWriteCredentials:
 class TestTriggerTokenRefresh:
     @mock.patch("claude_usage.core.write_credentials")
     @mock.patch("claude_usage.core.refresh_oauth_token")
+    @mock.patch("claude_usage.core.get_keychain_account", return_value="acct")
     @mock.patch("claude_usage.core.get_credentials")
-    def test_direct_refresh_success(self, mock_get_creds, mock_refresh, mock_write):
+    def test_direct_refresh_success(self, mock_get_creds, _mock_acct, mock_refresh, mock_write):
         mock_get_creds.return_value = {
             "accessToken": "old-access",
             "refreshToken": "old-refresh",
@@ -267,10 +338,15 @@ class TestTriggerTokenRefresh:
         assert written["accessToken"] == "new-access"
         assert written["refreshToken"] == "new-refresh"
 
+        # Account should be passed through
+        assert mock_write.call_args[1]["account"] == "acct"
+
     @mock.patch("claude_usage.core._cli_refresh_fallback")
     @mock.patch("claude_usage.core.refresh_oauth_token")
+    @mock.patch("claude_usage.core.get_keychain_account", return_value="")
     @mock.patch("claude_usage.core.get_credentials")
-    def test_fallback_on_refresh_failure(self, mock_get_creds, mock_refresh, mock_fallback):
+    def test_cli_fallback_when_oauth_fails(self, mock_get_creds, _mock_acct, mock_refresh, mock_fallback):
+        """CLI fallback is allowed when the OAuth exchange itself fails."""
         mock_get_creds.return_value = {"refreshToken": "old-refresh"}
         mock_refresh.return_value = (None, "HTTP 401")
         mock_fallback.return_value = True
@@ -292,24 +368,107 @@ class TestTriggerTokenRefresh:
     @mock.patch("claude_usage.core._cli_refresh_fallback")
     @mock.patch("claude_usage.core.write_credentials")
     @mock.patch("claude_usage.core.refresh_oauth_token")
+    @mock.patch("claude_usage.core.get_keychain_account", return_value="")
     @mock.patch("claude_usage.core.get_credentials")
-    def test_fallback_on_write_failure(self, mock_get_creds, mock_refresh, mock_write, mock_fallback):
+    def test_no_cli_fallback_after_successful_oauth(
+        self, mock_get_creds, _mock_acct, mock_refresh, mock_write, mock_fallback,
+    ):
+        """After OAuth succeeds the old token is consumed — no CLI fallback."""
         mock_get_creds.return_value = {"refreshToken": "old-refresh"}
         mock_refresh.return_value = (
             {"access_token": "new", "refresh_token": "new"},
             None,
         )
-        mock_write.return_value = False
-        mock_fallback.return_value = True
+        mock_write.return_value = False  # all writes fail
 
         result = trigger_token_refresh()
-        assert result is True
-        mock_fallback.assert_called_once()
+        assert result is False
+        mock_fallback.assert_not_called()
+        assert mock_write.call_count == WRITE_RETRIES
 
     @mock.patch("claude_usage.core.write_credentials")
     @mock.patch("claude_usage.core.refresh_oauth_token")
+    @mock.patch("claude_usage.core.get_keychain_account", return_value="")
     @mock.patch("claude_usage.core.get_credentials")
-    def test_nested_creds_updated_correctly(self, mock_get_creds, mock_refresh, mock_write):
+    def test_retries_write_on_failure(self, mock_get_creds, _mock_acct, mock_refresh, mock_write):
+        """Write fails twice then succeeds on third attempt."""
+        mock_get_creds.return_value = {"refreshToken": "old-refresh"}
+        mock_refresh.return_value = (
+            {"access_token": "new", "refresh_token": "new"},
+            None,
+        )
+        mock_write.side_effect = [False, False, True]
+
+        result = trigger_token_refresh()
+        assert result is True
+        assert mock_write.call_count == 3
+
+    @mock.patch("claude_usage.core.write_credentials")
+    @mock.patch("claude_usage.core.refresh_oauth_token")
+    @mock.patch("claude_usage.core.get_keychain_account", return_value="")
+    @mock.patch("claude_usage.core.get_credentials")
+    def test_computes_expires_at_from_expires_in(
+        self, mock_get_creds, _mock_acct, mock_refresh, mock_write,
+    ):
+        mock_get_creds.return_value = {
+            "accessToken": "old-access",
+            "refreshToken": "old-refresh",
+        }
+        mock_refresh.return_value = (
+            {"access_token": "new-access", "refresh_token": "new-refresh", "expires_in": 3600},
+            None,
+        )
+        mock_write.return_value = True
+
+        before = datetime.now(timezone.utc)
+        result = trigger_token_refresh()
+        after = datetime.now(timezone.utc)
+
+        assert result is True
+        written = mock_write.call_args[0][0]
+        assert "expiresAt" in written
+        assert written["expiresIn"] == 3600
+
+        # Verify the computed timestamp is in the expected range
+        expires_at = datetime.fromisoformat(written["expiresAt"])
+        expected_low = before + timedelta(seconds=3600)
+        expected_high = after + timedelta(seconds=3600)
+        assert expected_low <= expires_at <= expected_high
+
+    @mock.patch("claude_usage.core.write_credentials")
+    @mock.patch("claude_usage.core.refresh_oauth_token")
+    @mock.patch("claude_usage.core.get_keychain_account", return_value="")
+    @mock.patch("claude_usage.core.get_credentials")
+    def test_nested_creds_computes_expires_at(
+        self, mock_get_creds, _mock_acct, mock_refresh, mock_write,
+    ):
+        mock_get_creds.return_value = {
+            "claudeAiOauth": {
+                "accessToken": "old-access",
+                "refreshToken": "old-refresh",
+            }
+        }
+        mock_refresh.return_value = (
+            {"access_token": "new-access", "refresh_token": "new-refresh", "expires_in": 7200},
+            None,
+        )
+        mock_write.return_value = True
+
+        result = trigger_token_refresh()
+        assert result is True
+
+        written = mock_write.call_args[0][0]
+        nested = written["claudeAiOauth"]
+        assert nested["accessToken"] == "new-access"
+        assert nested["refreshToken"] == "new-refresh"
+        assert "expiresAt" in nested
+        assert nested["expiresIn"] == 7200
+
+    @mock.patch("claude_usage.core.write_credentials")
+    @mock.patch("claude_usage.core.refresh_oauth_token")
+    @mock.patch("claude_usage.core.get_keychain_account", return_value="")
+    @mock.patch("claude_usage.core.get_credentials")
+    def test_nested_creds_updated_correctly(self, mock_get_creds, _mock_acct, mock_refresh, mock_write):
         mock_get_creds.return_value = {
             "claudeAiOauth": {
                 "accessToken": "old-access",
