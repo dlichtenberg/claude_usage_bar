@@ -6,8 +6,10 @@ Pure stdlib — no rumps or PyObjC imports.
 import json
 import logging
 import os
+import plistlib
 import shutil
 import subprocess
+import sys
 import urllib.request
 import urllib.error
 from datetime import datetime, timezone
@@ -465,3 +467,105 @@ def save_config(config):
     os.makedirs(CONFIG_DIR, exist_ok=True)
     with open(CONFIG_PATH, "w") as f:
         json.dump(config, f, indent=2)
+
+
+# ── LaunchAgent management ───────────────────────────────────────────────────
+
+LAUNCH_AGENT_LABEL = "com.github.dlichtenberg.claude-usage-bar"
+LAUNCH_AGENT_DIR = os.path.expanduser("~/Library/LaunchAgents")
+LAUNCH_AGENT_PATH = os.path.join(LAUNCH_AGENT_DIR, f"{LAUNCH_AGENT_LABEL}.plist")
+
+
+def _is_valid_executable(path):
+    """Check that a path is an absolute, existing, executable file."""
+    return (
+        os.path.isabs(path)
+        and os.path.isfile(path)
+        and os.access(path, os.X_OK)
+    )
+
+
+def _get_executable_path():
+    """Resolve the path to the claude-usage-bar executable.
+
+    Checks: shutil.which (pip install), .app bundle, sys.argv[0] fallback.
+    Returns None if no valid executable can be found.
+    """
+    found = shutil.which("claude-usage-bar")
+    if found:
+        return found
+
+    # .app bundle: __file__ will be inside Something.app/Contents/...
+    if ".app/Contents/" in __file__:
+        # e.g. /Applications/Foo.app/Contents/MacOS/lib/core.py
+        # → /Applications/Foo.app/Contents/MacOS/Foo
+        app_root = __file__[: __file__.index(".app/Contents/") + len(".app/Contents/")]
+        app_name = __file__[: __file__.index(".app/")].rsplit("/", 1)[-1]
+        candidate = os.path.join(app_root, "MacOS", app_name)
+        if _is_valid_executable(candidate):
+            return candidate
+
+    fallback = os.path.abspath(sys.argv[0])
+    if _is_valid_executable(fallback):
+        return fallback
+
+    return None
+
+
+def generate_launch_agent_plist(executable_path):
+    """Generate a LaunchAgent plist XML string."""
+    log_path = os.path.expanduser("~/Library/Logs/claude-usage-bar.log")
+    plist = {
+        "Label": LAUNCH_AGENT_LABEL,
+        "ProgramArguments": [executable_path],
+        "RunAtLoad": True,
+        "KeepAlive": False,
+        "ProcessType": "Interactive",
+        "StandardOutPath": log_path,
+        "StandardErrorPath": log_path,
+    }
+    return plistlib.dumps(plist, fmt=plistlib.FMT_XML).decode()
+
+
+def install_launch_agent():
+    """Install the LaunchAgent plist. Returns True on success."""
+    try:
+        os.makedirs(LAUNCH_AGENT_DIR, exist_ok=True)
+    except OSError as e:
+        logger.warning("Failed to create LaunchAgents dir: %s", e)
+        return False
+
+    exe = _get_executable_path()
+    if exe is None:
+        logger.warning("Cannot install LaunchAgent: no valid executable found")
+        return False
+    logger.info("Resolved executable: %s", exe)
+    plist_xml = generate_launch_agent_plist(exe)
+
+    try:
+        with open(LAUNCH_AGENT_PATH, "w") as f:
+            f.write(plist_xml)
+    except OSError as e:
+        logger.warning("Failed to write LaunchAgent plist: %s", e)
+        return False
+
+    logger.info("LaunchAgent installed: %s", LAUNCH_AGENT_PATH)
+    return True
+
+
+def uninstall_launch_agent():
+    """Remove the LaunchAgent plist. Idempotent — returns True if absent."""
+    if not os.path.isfile(LAUNCH_AGENT_PATH):
+        return True
+    try:
+        os.remove(LAUNCH_AGENT_PATH)
+    except OSError as e:
+        logger.warning("Failed to remove LaunchAgent plist: %s", e)
+        return False
+    logger.info("LaunchAgent uninstalled: %s", LAUNCH_AGENT_PATH)
+    return True
+
+
+def is_launch_agent_installed():
+    """Check whether the LaunchAgent plist file exists."""
+    return os.path.isfile(LAUNCH_AGENT_PATH)
