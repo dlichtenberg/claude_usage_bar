@@ -49,16 +49,19 @@ def styled_segments(segments, font_name="Menlo", font_size=13.0):
     """Build an NSMutableAttributedString from colored segments.
 
     Args:
-        segments: List of (text, color_hex_or_None) tuples.
-        font_name: Font family name.
+        segments: List of (text, color_hex_or_None) or
+                  (text, color_hex_or_None, font_name_override) tuples.
+        font_name: Default font family name.
         font_size: Font size in points.
 
     Returns:
-        An NSMutableAttributedString with per-segment coloring.
+        An NSMutableAttributedString with per-segment coloring and fonts.
     """
     result = NSMutableAttributedString.alloc().init()
-    for text, color in segments:
-        part = styled_string(text, color=color, font_name=font_name, font_size=font_size)
+    for seg in segments:
+        text, color = seg[0], seg[1]
+        seg_font = seg[2] if len(seg) > 2 else font_name
+        part = styled_string(text, color=color, font_name=seg_font, font_size=font_size)
         result.appendAttributedString_(part)
     return result
 

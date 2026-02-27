@@ -172,13 +172,13 @@ class TestBarColorSelection:
     """Verify the correct severity color is picked for each mode."""
 
     def test_session_mode_uses_session_color(self):
-        # session=85 (red), week=10 (green) — session mode should be red
+        # session=85 (red), week=10 (orange) — session mode should be red
         assert color_hex_for_pct(85) == "#FF4444"
-        assert color_hex_for_pct(10) == "#44BB44"
+        assert color_hex_for_pct(10) == "#d97757"
 
     def test_week_mode_uses_week_color(self):
-        # session=10 (green), week=85 (red) — week mode should be red
-        assert color_hex_for_pct(10) == "#44BB44"
+        # session=10 (orange), week=85 (red) — week mode should be red
+        assert color_hex_for_pct(10) == "#d97757"
         assert color_hex_for_pct(85) == "#FF4444"
 
     def test_highest_uses_max_color(self):
@@ -186,10 +186,10 @@ class TestBarColorSelection:
         assert color_hex_for_pct(max(10, 85)) == "#FF4444"
 
     def test_color_thresholds(self):
-        assert color_hex_for_pct(0) == "#44BB44"
-        assert color_hex_for_pct(49) == "#44BB44"
-        assert color_hex_for_pct(50) == "#FFAA00"
-        assert color_hex_for_pct(79) == "#FFAA00"
+        assert color_hex_for_pct(0) == "#d97757"
+        assert color_hex_for_pct(49) == "#d97757"
+        assert color_hex_for_pct(50) == "#d97757"
+        assert color_hex_for_pct(79) == "#d97757"
         assert color_hex_for_pct(80) == "#FF4444"
         assert color_hex_for_pct(100) == "#FF4444"
 
@@ -200,24 +200,24 @@ class TestPanelColors:
     """Verify session/week rows use fixed colors only in color_split mode."""
 
     def test_session_color_constant(self):
-        assert SESSION_COLOR == "#44BB44"
+        assert SESSION_COLOR == "#d97757"
 
     def test_week_color_constant(self):
-        assert WEEK_COLOR == "#4488FF"
+        assert WEEK_COLOR == "#788c5d"
 
-    def test_swiftbar_session_row_green_in_color_split(self, swiftbar):
-        """Session line uses #44BB44 in color_split mode."""
+    def test_swiftbar_session_row_orange_in_color_split(self, swiftbar):
+        """Session line uses #d97757 in color_split mode."""
         data = self._make_data(session_pct=90, week_pct=10)
         output = self._capture_render(swiftbar, data, mode="color_split")
         session_line = [l for l in output.splitlines() if l.startswith("Session (5h)")][0]
-        assert "color=#44BB44" in session_line
+        assert "color=#d97757" in session_line
 
-    def test_swiftbar_week_row_blue_in_color_split(self, swiftbar):
-        """Week (all) line uses #4488FF in color_split mode."""
+    def test_swiftbar_week_row_green_in_color_split(self, swiftbar):
+        """Week (all) line uses #788c5d in color_split mode."""
         data = self._make_data(session_pct=10, week_pct=90)
         output = self._capture_render(swiftbar, data, mode="color_split")
         week_line = [l for l in output.splitlines() if l.startswith("Week (all)")][0]
-        assert "color=#4488FF" in week_line
+        assert "color=#788c5d" in week_line
 
     def test_swiftbar_session_row_severity_in_marker(self, swiftbar):
         """Session line uses severity color (red for 90%) in non-color_split modes."""
@@ -420,8 +420,8 @@ class TestSwiftBarBarColor:
         color = self._get_menu_bar_color(swiftbar, data, "highest")
         assert color == "#FF4444"
 
-    def test_session_mode_green_when_session_low(self, swiftbar):
-        # session=10 (green), week=85 (red) — session mode should be green
+    def test_session_mode_orange_when_session_low(self, swiftbar):
+        # session=10 (orange), week=85 (red) — session mode should be orange
         data = {
             "five_hour": {"utilization": 10, "resets_at": "2099-01-01T00:00:00Z"},
             "seven_day": {"utilization": 85, "resets_at": "2099-01-01T00:00:00Z"},
@@ -429,7 +429,7 @@ class TestSwiftBarBarColor:
             "extra_usage": {},
         }
         color = self._get_menu_bar_color(swiftbar, data, "session")
-        assert color == "#44BB44"  # green for 10%
+        assert color == "#d97757"  # orange for 10%
 
 
 # ── Progress bar helpers ─────────────────────────────────────────────────────
