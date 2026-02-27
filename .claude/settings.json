@@ -1,14 +1,8 @@
 {
-  "hooks": {
-    "WorktreeCreate": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "uv venv --python 3.12 && uv pip install -e . pytest"
-          }
-        ]
-      }
+  "permissions": {
+    "allow": [
+      "Read(/Users/david/Programming/scratch/claude_playground/usage_widget/**)"
     ]
-  }
+  },
+  "hooks": {}
 }

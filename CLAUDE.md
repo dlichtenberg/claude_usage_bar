@@ -2,6 +2,7 @@
 
 - Use the local `.venv`: `source .venv/bin/activate` (or just use `.venv/bin/python` directly).
 - Recreate with `uv venv --python 3.12 && uv pip install -e . pytest`.
+- **Worktrees**: WorktreeCreate hooks are broken in Claude Code (anthropics/claude-code#27989 — silent hang). Until fixed, manually run `uv venv --python 3.12 && uv pip install -e . pytest` after creating a worktree.
 - After editing source files, run `uv pip install -e .` if imports reflect stale code (the package may have been installed non-editable).
 - Run tests: `.venv/bin/python -m pytest tests/`.
 - Don't add "Generated with Claude Code" lines to PRs.
