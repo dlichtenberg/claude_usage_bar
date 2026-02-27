@@ -14,6 +14,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import urllib.request
 import urllib.error
 from datetime import datetime, timedelta, timezone
@@ -484,6 +485,8 @@ def trigger_token_refresh():
             logger.info("Direct token refresh succeeded")
             return True
         logger.warning("Keychain write attempt %d/%d failed", attempt, WRITE_RETRIES)
+        if attempt < WRITE_RETRIES:
+            time.sleep(0.5)
 
     logger.error(
         "All %d keychain write attempts failed after successful OAuth refresh; "
