@@ -476,10 +476,20 @@ LAUNCH_AGENT_DIR = os.path.expanduser("~/Library/LaunchAgents")
 LAUNCH_AGENT_PATH = os.path.join(LAUNCH_AGENT_DIR, f"{LAUNCH_AGENT_LABEL}.plist")
 
 
+def _is_valid_executable(path):
+    """Check that a path is an absolute, existing, executable file."""
+    return (
+        os.path.isabs(path)
+        and os.path.isfile(path)
+        and os.access(path, os.X_OK)
+    )
+
+
 def _get_executable_path():
     """Resolve the path to the claude-usage-bar executable.
 
     Checks: shutil.which (pip install), .app bundle, sys.argv[0] fallback.
+    Returns None if no valid executable can be found.
     """
     found = shutil.which("claude-usage-bar")
     if found:
@@ -491,9 +501,15 @@ def _get_executable_path():
         # → /Applications/Foo.app/Contents/MacOS/Foo
         app_root = __file__[: __file__.index(".app/Contents/") + len(".app/Contents/")]
         app_name = __file__[: __file__.index(".app/")].rsplit("/", 1)[-1]
-        return os.path.join(app_root, "MacOS", app_name)
+        candidate = os.path.join(app_root, "MacOS", app_name)
+        if _is_valid_executable(candidate):
+            return candidate
 
-    return sys.argv[0]
+    fallback = os.path.abspath(sys.argv[0])
+    if _is_valid_executable(fallback):
+        return fallback
+
+    return None
 
 
 def generate_launch_agent_plist(executable_path):
@@ -504,6 +520,7 @@ def generate_launch_agent_plist(executable_path):
         "ProgramArguments": [executable_path],
         "RunAtLoad": True,
         "KeepAlive": False,
+        "ProcessType": "Interactive",
         "StandardOutPath": log_path,
         "StandardErrorPath": log_path,
     }
@@ -519,6 +536,10 @@ def install_launch_agent():
         return False
 
     exe = _get_executable_path()
+    if exe is None:
+        logger.warning("Cannot install LaunchAgent: no valid executable found")
+        return False
+    logger.info("Resolved executable: %s", exe)
     plist_xml = generate_launch_agent_plist(exe)
 
     try:

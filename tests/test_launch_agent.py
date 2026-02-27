@@ -4,6 +4,8 @@ import plistlib
 import sys
 from unittest import mock
 
+import pytest
+
 from claude_usage.core import (
     LAUNCH_AGENT_LABEL,
     LAUNCH_AGENT_PATH,
@@ -52,6 +54,11 @@ class TestGenerateLaunchAgentPlist:
         assert "StandardErrorPath" in parsed
         assert "claude-usage-bar" in parsed["StandardOutPath"]
 
+    def test_process_type_interactive(self):
+        xml = generate_launch_agent_plist("/usr/local/bin/claude-usage-bar")
+        parsed = plistlib.loads(xml.encode())
+        assert parsed["ProcessType"] == "Interactive"
+
 
 # ── _get_executable_path ─────────────────────────────────────────────────────
 
@@ -63,19 +70,29 @@ class TestGetExecutablePath:
         assert result == "/usr/local/bin/claude-usage-bar"
         mock_which.assert_called_once_with("claude-usage-bar")
 
+    @mock.patch("claude_usage.core._is_valid_executable", return_value=True)
     @mock.patch("claude_usage.core.shutil.which", return_value=None)
-    def test_app_bundle_detection(self, _mock_which):
+    def test_app_bundle_detection(self, _mock_which, _mock_valid):
         fake_path = "/Applications/ClaudeUsage.app/Contents/MacOS/lib/core.py"
         with mock.patch("claude_usage.core.__file__", fake_path):
             result = _get_executable_path()
         assert result.endswith("ClaudeUsage.app/Contents/MacOS/ClaudeUsage")
 
+    @mock.patch("claude_usage.core._is_valid_executable", return_value=True)
     @mock.patch("claude_usage.core.shutil.which", return_value=None)
-    def test_fallback_to_sys_argv(self, _mock_which):
+    def test_fallback_to_sys_argv(self, _mock_which, _mock_valid):
         with mock.patch("claude_usage.core.__file__", "/some/venv/lib/core.py"):
             with mock.patch.object(sys, "argv", ["/home/user/.local/bin/claude-usage-bar"]):
                 result = _get_executable_path()
         assert result == "/home/user/.local/bin/claude-usage-bar"
+
+    @mock.patch("claude_usage.core._is_valid_executable", return_value=False)
+    @mock.patch("claude_usage.core.shutil.which", return_value=None)
+    def test_returns_none_when_no_valid_exe(self, _mock_which, _mock_valid):
+        with mock.patch("claude_usage.core.__file__", "/some/venv/lib/core.py"):
+            with mock.patch.object(sys, "argv", ["./relative-script"]):
+                result = _get_executable_path()
+        assert result is None
 
 
 # ── install_launch_agent ─────────────────────────────────────────────────────
@@ -99,6 +116,12 @@ class TestInstallLaunchAgent:
     @mock.patch("claude_usage.core.os.makedirs")
     @mock.patch("builtins.open", side_effect=OSError("permission denied"))
     def test_write_failure(self, _mock_open, _mock_makedirs, _mock_exe):
+        result = install_launch_agent()
+        assert result is False
+
+    @mock.patch("claude_usage.core._get_executable_path", return_value=None)
+    @mock.patch("claude_usage.core.os.makedirs")
+    def test_no_valid_executable(self, _mock_makedirs, _mock_exe):
         result = install_launch_agent()
         assert result is False
 
@@ -145,8 +168,9 @@ class TestCLIFlags:
         with mock.patch.object(sys, "argv", ["claude-usage-bar", "--install"]):
             with mock.patch("claude_usage.app.ClaudeUsageApp"):
                 from claude_usage.app import main
-                with mock.patch("claude_usage.app.sys.exit") as mock_exit:
-                    main()
+                with mock.patch("claude_usage.app.sys.exit", side_effect=SystemExit) as mock_exit:
+                    with pytest.raises(SystemExit):
+                        main()
                     mock_exit.assert_called_once_with(0)
 
     @mock.patch("claude_usage.app.install_launch_agent", return_value=False)
@@ -154,8 +178,9 @@ class TestCLIFlags:
         with mock.patch.object(sys, "argv", ["claude-usage-bar", "--install"]):
             with mock.patch("claude_usage.app.ClaudeUsageApp"):
                 from claude_usage.app import main
-                with mock.patch("claude_usage.app.sys.exit") as mock_exit:
-                    main()
+                with mock.patch("claude_usage.app.sys.exit", side_effect=SystemExit) as mock_exit:
+                    with pytest.raises(SystemExit):
+                        main()
                     mock_exit.assert_called_once_with(1)
 
     @mock.patch("claude_usage.app.uninstall_launch_agent", return_value=True)
@@ -163,8 +188,9 @@ class TestCLIFlags:
         with mock.patch.object(sys, "argv", ["claude-usage-bar", "--uninstall"]):
             with mock.patch("claude_usage.app.ClaudeUsageApp"):
                 from claude_usage.app import main
-                with mock.patch("claude_usage.app.sys.exit") as mock_exit:
-                    main()
+                with mock.patch("claude_usage.app.sys.exit", side_effect=SystemExit) as mock_exit:
+                    with pytest.raises(SystemExit):
+                        main()
                     mock_exit.assert_called_once_with(0)
 
     @mock.patch("claude_usage.app.uninstall_launch_agent", return_value=False)
@@ -172,6 +198,7 @@ class TestCLIFlags:
         with mock.patch.object(sys, "argv", ["claude-usage-bar", "--uninstall"]):
             with mock.patch("claude_usage.app.ClaudeUsageApp"):
                 from claude_usage.app import main
-                with mock.patch("claude_usage.app.sys.exit") as mock_exit:
-                    main()
+                with mock.patch("claude_usage.app.sys.exit", side_effect=SystemExit) as mock_exit:
+                    with pytest.raises(SystemExit):
+                        main()
                     mock_exit.assert_called_once_with(1)
