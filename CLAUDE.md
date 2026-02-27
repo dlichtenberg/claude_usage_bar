@@ -4,6 +4,7 @@
 - Recreate with `uv venv --python 3.12 && uv pip install -e . pytest`.
 - **Worktrees**: WorktreeCreate hooks are broken in Claude Code (anthropics/claude-code#27989 — silent hang). Until fixed, manually run `uv venv --python 3.12 && uv pip install -e . pytest` after creating a worktree.
 - After editing source files, run `uv pip install -e .` if imports reflect stale code (the package may have been installed non-editable).
+- Run the tool: `uv pip install -e .` first, then `.venv/bin/python -m claude_usage`.
 - Run tests: `.venv/bin/python -m pytest tests/`.
 - Don't add "Generated with Claude Code" lines to PRs.
 - When using `gh` CLI, always pass `--repo dlichtenberg/claude_usage_bar` since the local git remote is a proxy and not recognized as a GitHub host.
