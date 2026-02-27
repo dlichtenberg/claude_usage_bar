@@ -546,7 +546,7 @@ def _get_executable_path():
     """
     found = shutil.which("claude-usage-bar")
     if found:
-        return found
+        return os.path.realpath(found)
 
     # .app bundle: __file__ will be inside Something.app/Contents/...
     if ".app/Contents/" in __file__:

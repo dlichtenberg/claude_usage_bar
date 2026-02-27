@@ -66,9 +66,21 @@ class TestGetExecutablePath:
     @mock.patch("claude_usage.core.shutil.which")
     def test_pip_install_via_which(self, mock_which):
         mock_which.return_value = "/usr/local/bin/claude-usage-bar"
-        result = _get_executable_path()
+        with mock.patch("claude_usage.core.os.path.realpath", side_effect=lambda p: p):
+            result = _get_executable_path()
         assert result == "/usr/local/bin/claude-usage-bar"
         mock_which.assert_called_once_with("claude-usage-bar")
+
+    @mock.patch("claude_usage.core.shutil.which")
+    def test_relative_path_from_which_is_resolved(self, mock_which):
+        """shutil.which can return a relative path if PATH contains relative dirs."""
+        mock_which.return_value = ".venv/bin/claude-usage-bar"
+        with mock.patch(
+            "claude_usage.core.os.path.realpath",
+            return_value="/home/user/project/.venv/bin/claude-usage-bar",
+        ):
+            result = _get_executable_path()
+        assert result == "/home/user/project/.venv/bin/claude-usage-bar"
 
     @mock.patch("claude_usage.core._is_valid_executable", return_value=True)
     @mock.patch("claude_usage.core.shutil.which", return_value=None)
