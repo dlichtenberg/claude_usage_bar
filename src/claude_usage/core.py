@@ -541,12 +541,20 @@ def _is_valid_executable(path):
 def _get_executable_path():
     """Resolve the path to the claude-usage-bar executable.
 
-    Checks: shutil.which (pip install), .app bundle, sys.argv[0] fallback.
+    Checks (in order): shutil.which, sibling of sys.executable (venv),
+    .app bundle, sys.argv[0] fallback.
     Returns None if no valid executable can be found.
     """
     found = shutil.which("claude-usage-bar")
     if found:
         return os.path.realpath(found)
+
+    # Check alongside the Python interpreter (e.g. .venv/bin/claude-usage-bar).
+    # pip/uv install entry-point scripts next to the interpreter, but the venv
+    # bin dir may not be on PATH when the app is running as a menu-bar process.
+    sibling = os.path.join(os.path.dirname(sys.executable), "claude-usage-bar")
+    if _is_valid_executable(sibling):
+        return os.path.realpath(sibling)
 
     # .app bundle: __file__ will be inside Something.app/Contents/...
     if ".app/Contents/" in __file__:
