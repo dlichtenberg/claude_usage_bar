@@ -1,76 +1,42 @@
 # Claude Usage Bar
 
-A macOS menu bar app that displays your Claude Pro/Max usage limits. Available as a **standalone app** or as a **SwiftBar plugin**.
+See your Claude Pro/Max usage at a glance — right in your macOS menu bar.
 
-![menu bar screenshot](https://img.shields.io/badge/macOS-menu%20bar-blue)
+<img width="277" height="273" alt="Claude Usage Bar screenshot" src="https://github.com/user-attachments/assets/71d950ee-7bc6-4900-abd6-1fcc15164eda" />
 
-<img width="277" height="273" alt="image" src="https://github.com/user-attachments/assets/71d950ee-7bc6-4900-abd6-1fcc15164eda" />
+## Getting started
 
-## Installation
-
-with pypi
-`pip install claude-usage-bar`
-
-with homebrew
-`brew install claude-usage-bar`
-
-download .app bundle
-TODO
-
-with [SwiftBar](https://github.com/swiftbar/SwiftBar) plugin:
-## Standalone App (Recommended)
-
-### Install and run
+Install and run:
 
 ```sh
-pip install -e .
+pip install claude-usage-bar
 claude-usage-bar
 ```
 
-Or run directly:
+To keep it running across restarts, click the menu bar icon and enable **Launch at Login**.
 
-```sh
-python -m claude_usage
-```
+## Requirements
 
-### Build a .app bundle
+- macOS
+- Python 3.10+
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and logged in
 
-```sh
-pip install py2app
-python setup.py py2app
-```
+## How it works
 
-This produces `dist/Claude Usage Bar.app`. Move it to `/Applications` and add it to **System Settings > General > Login Items** to start automatically.
-
-## SwiftBar Plugin
-
-If you prefer [SwiftBar](https://github.com/swiftbar/SwiftBar):
-
-1. Install SwiftBar (e.g. `brew install --cask swiftbar`)
-2. Clone this repo:
-   ```sh
-   git clone https://github.com/dlichtenberg/claude_usage_bar.git
-   ```
-3. Symlink or copy the plugin into your SwiftBar plugins directory:
-   ```sh
-   ln -s "$(pwd)/claude_usage_bar/claude-usage.5m.py" ~/swiftbar/
-   ```
-4. Make sure the script is executable:
-   ```sh
-   chmod +x claude-usage.5m.py
-   ```
+Claude Usage Bar periodically checks your current usage against the Anthropic API and displays a progress bar, so you always know where you stand against your plan's limits. Authentication is handled through your existing Claude Code login.
 
 ## Debugging
 
-Set `CLAUDE_USAGE_LOG` to control log verbosity when running from Terminal:
+Set `CLAUDE_USAGE_LOG` for verbose output when running from Terminal:
 
 ```sh
 CLAUDE_USAGE_LOG=DEBUG claude-usage-bar
 ```
 
-Levels: `DEBUG`, `INFO` (default), `WARNING`, `ERROR`.
+## Contributing
 
-## Requirements
+Contributions are welcome — [open an issue](https://github.com/dlichtenberg/claude_usage_bar/issues) to discuss bugs or ideas.
 
-- Python 3.10+
-- An active Claude Pro or Max subscription with [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed.
+## License
+
+[MIT](LICENSE)
