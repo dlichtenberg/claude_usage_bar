@@ -82,20 +82,40 @@ class TestGetExecutablePath:
             result = _get_executable_path()
         assert result == "/home/user/project/.venv/bin/claude-usage-bar"
 
-    @mock.patch("claude_usage.core._is_valid_executable", return_value=True)
     @mock.patch("claude_usage.core.shutil.which", return_value=None)
-    def test_app_bundle_detection(self, _mock_which, _mock_valid):
+    def test_sibling_of_sys_executable(self, _mock_which):
+        """Entry-point script next to the Python interpreter is found."""
+        with mock.patch.object(sys, "executable", "/opt/venv/bin/python"):
+            with mock.patch(
+                "claude_usage.core._is_valid_executable",
+                side_effect=lambda p: p == "/opt/venv/bin/claude-usage-bar",
+            ):
+                result = _get_executable_path()
+        assert result is not None
+        assert result.endswith("claude-usage-bar")
+
+    @mock.patch("claude_usage.core.shutil.which", return_value=None)
+    def test_app_bundle_detection(self, _mock_which):
         fake_path = "/Applications/ClaudeUsage.app/Contents/MacOS/lib/core.py"
-        with mock.patch("claude_usage.core.__file__", fake_path):
-            result = _get_executable_path()
+        with mock.patch.object(sys, "executable", "/usr/bin/python3"):
+            with mock.patch("claude_usage.core.__file__", fake_path):
+                with mock.patch(
+                    "claude_usage.core._is_valid_executable",
+                    side_effect=lambda p: p != "/usr/bin/claude-usage-bar",
+                ):
+                    result = _get_executable_path()
         assert result.endswith("ClaudeUsage.app/Contents/MacOS/ClaudeUsage")
 
-    @mock.patch("claude_usage.core._is_valid_executable", return_value=True)
     @mock.patch("claude_usage.core.shutil.which", return_value=None)
-    def test_fallback_to_sys_argv(self, _mock_which, _mock_valid):
-        with mock.patch("claude_usage.core.__file__", "/some/venv/lib/core.py"):
-            with mock.patch.object(sys, "argv", ["/home/user/.local/bin/claude-usage-bar"]):
-                result = _get_executable_path()
+    def test_fallback_to_sys_argv(self, _mock_which):
+        with mock.patch.object(sys, "executable", "/usr/bin/python3"):
+            with mock.patch("claude_usage.core.__file__", "/some/venv/lib/core.py"):
+                with mock.patch.object(sys, "argv", ["/home/user/.local/bin/claude-usage-bar"]):
+                    with mock.patch(
+                        "claude_usage.core._is_valid_executable",
+                        side_effect=lambda p: p == "/home/user/.local/bin/claude-usage-bar",
+                    ):
+                        result = _get_executable_path()
         assert result == "/home/user/.local/bin/claude-usage-bar"
 
     @mock.patch("claude_usage.core._is_valid_executable", return_value=False)
