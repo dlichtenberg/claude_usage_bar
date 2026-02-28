@@ -9,11 +9,18 @@ import traceback
 import rumps
 from PyObjCTools import AppHelper
 
-from claude_usage.core import (
-    get_access_token,
-    fetch_usage,
-    trigger_token_refresh,
-    find_claude,
+from claude_usage.api import fetch_usage
+from claude_usage.auth import get_access_token, trigger_token_refresh, find_claude
+from claude_usage.config import (
+    load_config,
+    save_config,
+    MODE_SESSION,
+    MODE_WEEK,
+    MODE_HIGHEST,
+    MODE_COLOR_SPLIT,
+    MODE_MARKER,
+)
+from claude_usage.display import (
     time_until,
     color_hex_for_pct,
     progress_bar,
@@ -21,18 +28,13 @@ from claude_usage.core import (
     color_split_bar_segments,
     marker_progress_bar,
     merged_menu_bar_text,
-    load_config,
-    save_config,
+    SESSION_COLOR,
+    WEEK_COLOR,
+)
+from claude_usage.launch_agent import (
     install_launch_agent,
     uninstall_launch_agent,
     is_launch_agent_installed,
-    SESSION_COLOR,
-    WEEK_COLOR,
-    MODE_SESSION,
-    MODE_WEEK,
-    MODE_HIGHEST,
-    MODE_COLOR_SPLIT,
-    MODE_MARKER,
 )
 
 from claude_usage.attributed import styled_string, styled_segments, set_inert_title
