@@ -25,7 +25,15 @@ The app logs the auth/refresh flow via Python `logging` (INFO by default). Set `
 
 ## Architecture Notes
 
-- `claude-usage.5m.py` (SwiftBar plugin) is a standalone script that **duplicates** business logic from `src/claude_usage/core.py` because SwiftBar requires a single self-contained file. When changing shared logic (progress bars, color thresholds, config loading, etc.), always update both files or they will diverge.
+- Business logic is split into focused modules under `src/claude_usage/`:
+  - `auth.py` — keychain I/O, OAuth token refresh orchestration, CLI discovery
+  - `api.py` — shared HTTP helper (`_api_request`), `fetch_usage`, `refresh_oauth_token`
+  - `config.py` — display mode constants, config load/save
+  - `display.py` — progress bars, colors, menu bar text rendering
+  - `launch_agent.py` — LaunchAgent plist management
+  - `app.py` — macOS menu bar UI (rumps/PyObjC)
+  - `attributed.py` — NSAttributedString helpers for styled text
+- `claude-usage.5m.py` (SwiftBar plugin) is a standalone script that **duplicates** business logic from the above modules because SwiftBar requires a single self-contained file. When changing shared logic (progress bars, color thresholds, config loading, etc.), always update both files or they will diverge.
 - User preferences are stored in `~/.config/claude_usage/config.json`.
 - Do not write scratch/planning files into the repo — use the conversation instead.
 - Keychain credentials are nested: `{"claudeAiOauth": {"accessToken", "refreshToken", "expiresAt", "scopes", "subscriptionType", "rateLimitTier"}}`. The code handles flat and snake_case variants too.
