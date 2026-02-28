@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Read(/Users/david/Programming/scratch/claude_playground/usage_widget/**)"
+      "Read(/Users/david/Programming/scratch/claude_playground/usage_widget/**)",
+      "Read(/Users/david/Programming/scratch/claude_playground/usage_widget/*)",
+      "Read(/Users/david/Library/LaunchAgents/**)"
     ]
   },
   "hooks": {}
