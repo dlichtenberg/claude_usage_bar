@@ -2,7 +2,7 @@
 
 See your Claude Pro/Max usage at a glance — right in your macOS menu bar.
 
-<img width="277" height="273" alt="Claude Usage Bar screenshot" src="https://github.com/user-attachments/assets/71d950ee-7bc6-4900-abd6-1fcc15164eda" />
+<img width="253" height="319" alt="Claude Usage Bar screenshot" src="https://github.com/user-attachments/assets/65819b83-36c0-4d57-bf81-12f2209813e6" />
 
 ## Getting started
 
