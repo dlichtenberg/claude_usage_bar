@@ -6,8 +6,6 @@ default mode, panel colors, bar color selection, and contrast settings.
 
 import importlib.util
 import re
-import sys
-import textwrap
 from io import StringIO
 from pathlib import Path
 from unittest import mock
@@ -16,13 +14,15 @@ import pytest
 
 # ── Import core module normally ──────────────────────────────────────────────
 
-from claude_usage.core import (
+from claude_usage.config import (
     DEFAULT_MODE,
     MODE_COLOR_SPLIT,
     MODE_HIGHEST,
     MODE_MARKER,
     MODE_SESSION,
     MODE_WEEK,
+)
+from claude_usage.display import (
     SESSION_COLOR,
     WEEK_COLOR,
     color_hex_for_pct,
