@@ -92,7 +92,8 @@ class TestGetExecutablePath:
         assert result is not None
         assert result.endswith("claude-usage-bar")
 
-    @mock.patch("claude_usage.launch_agent._is_valid_executable", return_value=True)
+    @mock.patch("claude_usage.launch_agent._is_valid_executable",
+                side_effect=lambda p: ".app/Contents/MacOS/" in p)
     @mock.patch("claude_usage.launch_agent.shutil.which", return_value=None)
     def test_app_bundle_detection(self, _mock_which, _mock_valid):
         fake_path = "/Applications/ClaudeUsage.app/Contents/MacOS/lib/core.py"
@@ -100,7 +101,8 @@ class TestGetExecutablePath:
             result = _get_executable_path()
         assert result.endswith("ClaudeUsage.app/Contents/MacOS/ClaudeUsage")
 
-    @mock.patch("claude_usage.launch_agent._is_valid_executable", return_value=True)
+    @mock.patch("claude_usage.launch_agent._is_valid_executable",
+                side_effect=lambda p: p == "/home/user/.local/bin/claude-usage-bar")
     @mock.patch("claude_usage.launch_agent.shutil.which", return_value=None)
     def test_fallback_to_sys_argv(self, _mock_which, _mock_valid):
         with mock.patch("claude_usage.launch_agent.__file__", "/some/venv/lib/core.py"):
