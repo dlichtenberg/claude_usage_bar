@@ -323,10 +323,10 @@ class ClaudeUsageApp(rumps.App):
         """Update all menu items from API response data."""
         self._last_data = data
 
-        five_hour = data.get("five_hour", {})
-        seven_day = data.get("seven_day", {})
-        seven_day_sonnet = data.get("seven_day_sonnet", {})
-        extra = data.get("extra_usage", {})
+        five_hour = data.get("five_hour") or {}
+        seven_day = data.get("seven_day") or {}
+        seven_day_sonnet = data.get("seven_day_sonnet") or {}
+        extra = data.get("extra_usage") or {}
 
         session_pct = five_hour.get("utilization", 0)
         week_pct = seven_day.get("utilization", 0)
