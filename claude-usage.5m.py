@@ -336,10 +336,10 @@ def print_error(msg):
 def render(data):
     """Render the full SwiftBar output from API response data."""
     # Determine the "headline" percentage — use the highest utilization
-    five_hour = data.get("five_hour", {})
-    seven_day = data.get("seven_day", {})
-    seven_day_sonnet = data.get("seven_day_sonnet", {})
-    extra = data.get("extra_usage", {})
+    five_hour = data.get("five_hour") or {}
+    seven_day = data.get("seven_day") or {}
+    seven_day_sonnet = data.get("seven_day_sonnet") or {}
+    extra = data.get("extra_usage") or {}
 
     session_pct = five_hour.get("utilization", 0)
     week_pct = seven_day.get("utilization", 0)
