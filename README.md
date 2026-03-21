@@ -10,7 +10,7 @@ Install and run:
 
 ```sh
 pip install claude-usage-bar
-claude-usage-bar
+claude-usage-bar &
 ```
 
 To keep it running across restarts, click the menu bar icon and enable **Launch at Login**.
@@ -35,7 +35,7 @@ CLAUDE_USAGE_LOG=DEBUG claude-usage-bar
 
 ## Contributing
 
-Contributions are welcome — [open an issue](https://github.com/dlichtenberg/claude_usage_bar/issues) to discuss bugs or ideas.
+Contributions are welcome — feedback and bug reports are greatly appreciated. [open an issue](https://github.com/dlichtenberg/claude_usage_bar/issues) to discuss bugs or ideas.
 
 ### Local development
 
