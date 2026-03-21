@@ -37,6 +37,24 @@ CLAUDE_USAGE_LOG=DEBUG claude-usage-bar
 
 Contributions are welcome — [open an issue](https://github.com/dlichtenberg/claude_usage_bar/issues) to discuss bugs or ideas.
 
+### Local development
+
+```sh
+uv venv --python 3.12   # or: python3 -m venv .venv (if you don't have uv)
+source .venv/bin/activate
+
+# Install the package and its dependencies in editable mode,
+# so local source changes take effect without reinstalling
+uv pip install -e .        # or: pip install -e .
+
+# Run the app
+python -m claude_usage
+
+# Run tests
+uv pip install pytest      # or: pip install pytest
+python -m pytest tests/
+```
+
 ## License
 
 [MIT](LICENSE)
