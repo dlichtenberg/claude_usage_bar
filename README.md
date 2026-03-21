@@ -23,7 +23,7 @@ To keep it running across restarts, click the menu bar icon and enable **Launch 
 
 ## How it works
 
-Claude Usage Bar periodically checks your current usage against the Anthropic API and displays a progress bar, so you always know where you stand against your plan's limits. Authentication is handled through your existing Claude Code login.
+Claude Usage Bar periodically checks your current usage against the Anthropic API and displays a progress bar, so you always know where you stand against your plan's limits. Authentication is handled through your existing Claude Code login. 
 
 ## Debugging
 
@@ -54,6 +54,9 @@ python -m claude_usage
 uv pip install pytest      # or: pip install pytest
 python -m pytest tests/
 ```
+
+## Security Notes
+claude-usage-bar does read your auth credentials from your keychain, but only uses them to fetch usage data. [You can read the code](https://github.com/dlichtenberg/claude_usage_bar/blob/main/src/claude_usage/auth.py) or ask claude what it's doing. I wish we didn't have to and could use 3rd party oauth, but Anthropic doesn't expose usage tracking for Pro/Max accounts via a developer API as of writing.
 
 ## License
 
