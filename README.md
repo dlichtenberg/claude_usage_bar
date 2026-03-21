@@ -56,7 +56,7 @@ python -m pytest tests/
 ```
 
 ## Security Notes
-claude-usage-bar does read your auth credentials from your keychain, but only uses them to fetch usage data. [You can read the code](https://github.com/dlichtenberg/claude_usage_bar/blob/main/src/claude_usage/auth.py) or ask claude what it's doing. I wish we didn't have to and could use 3rd party oauth, but Anthropic doesn't expose usage tracking for Pro/Max accounts via a developer API as of writing.
+claude-usage-bar does read your auth credentials from your keychain, but only uses them to fetch usage data. [You can read the code](https://github.com/dlichtenberg/claude_usage_bar/blob/main/src/claude_usage/auth.py) or ask claude what it's doing. 
 
 ## License
 
