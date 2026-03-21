@@ -57,10 +57,11 @@ def get_credentials() -> dict[str, Any] | None:
         logger.debug("Keychain JSON is not a dict")
         return None
 
-    logger.debug("Keychain JSON keys: %s", list(creds.keys()))
+    
+    logger.debug("Keychain JSON property names: %s", list(creds.keys())) # keys as in dictionary keys, not security keys.
     for k, v in creds.items():
         if isinstance(v, dict):
-            logger.debug("  nested '%s' keys: %s", k, list(v.keys()))
+            logger.debug("  nested '%s' property: %s", k, list(v.keys()))
 
     return creds
 
