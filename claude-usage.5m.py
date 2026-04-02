@@ -333,6 +333,20 @@ def print_error(msg):
     print("Refresh | refresh=true")
 
 
+def _label_for_key(key):
+    """Convert an API key like 'seven_day_opus' to a padded display label."""
+    if key.startswith("seven_day_"):
+        suffix = key[len("seven_day_"):].replace("_", " ").title()
+        label = f"Week ({suffix})"
+    elif key.startswith("five_hour_"):
+        suffix = key[len("five_hour_"):].replace("_", " ").title()
+        label = f"Session ({suffix})"
+    else:
+        label = key.replace("_", " ").title()
+    # Pad to 17 chars to align with existing labels.
+    return label.ljust(17)
+
+
 def render(data):
     """Render the full SwiftBar output from API response data."""
     # Determine the "headline" percentage — use the highest utilization
@@ -341,8 +355,14 @@ def render(data):
     seven_day_sonnet = data.get("seven_day_sonnet") or {}
     extra = data.get("extra_usage") or {}
 
-    session_pct = five_hour.get("utilization", 0)
-    week_pct = seven_day.get("utilization", 0)
+    # Identify unknown usage categories.
+    known_keys = {"five_hour", "seven_day", "seven_day_sonnet", "extra_usage"}
+    unknown_keys = [k for k in data if k not in known_keys]
+    for key in unknown_keys:
+        print(f"New usage category: {key!r}", file=sys.stderr)
+
+    session_pct = five_hour.get("utilization") or 0
+    week_pct = seven_day.get("utilization") or 0
     headline_pct = max(session_pct, week_pct)
 
     config = load_config()
@@ -361,46 +381,71 @@ def render(data):
 
     print("---")
 
-    # ── Session (5h) ──
-    pct = five_hour.get("utilization", 0)
-    c = "#d97757" if mode == MODE_COLOR_SPLIT else color_for_pct(pct)
-    bar = progress_bar(pct)
-    resets = time_until(five_hour.get("resets_at"))
-    print(f"Session (5h)     {bar} {pct:.0f}% | font=Menlo size=13 color={c}")
-    print(f"  Resets in {resets} | font=Menlo size=11 color=#444444")
+    has_any = False
 
-    print("---")
+    # ── Session (5h) ──
+    if five_hour:
+        has_any = True
+        pct = five_hour.get("utilization") or 0
+        c = "#d97757" if mode == MODE_COLOR_SPLIT else color_for_pct(pct)
+        bar = progress_bar(pct)
+        resets = time_until(five_hour.get("resets_at"))
+        print(f"Session (5h)     {bar} {pct:.0f}% | font=Menlo size=13 color={c}")
+        print(f"  Resets in {resets} | font=Menlo size=11 color=#444444")
+        print("---")
 
     # ── Week (all models) ──
-    pct = seven_day.get("utilization", 0)
-    c = "#788c5d" if mode == MODE_COLOR_SPLIT else color_for_pct(pct)
-    bar = progress_bar(pct)
-    resets = time_until(seven_day.get("resets_at"))
-    print(f"Week (all)       {bar} {pct:.0f}% | font=Menlo size=13 color={c}")
-    print(f"  Resets in {resets} | font=Menlo size=11 color=#444444")
-
-    print("---")
+    if seven_day:
+        has_any = True
+        pct = seven_day.get("utilization") or 0
+        c = "#788c5d" if mode == MODE_COLOR_SPLIT else color_for_pct(pct)
+        bar = progress_bar(pct)
+        resets = time_until(seven_day.get("resets_at"))
+        print(f"Week (all)       {bar} {pct:.0f}% | font=Menlo size=13 color={c}")
+        print(f"  Resets in {resets} | font=Menlo size=11 color=#444444")
+        print("---")
 
     # ── Week (Sonnet) ──
-    pct = seven_day_sonnet.get("utilization", 0)
-    c = color_for_pct(pct)
-    bar = progress_bar(pct)
-    resets = time_until(seven_day_sonnet.get("resets_at"))
-    print(f"Week (Sonnet)    {bar} {pct:.0f}% | font=Menlo size=13 color={c}")
-    print(f"  Resets in {resets} | font=Menlo size=11 color=#444444")
+    if seven_day_sonnet:
+        has_any = True
+        pct = seven_day_sonnet.get("utilization") or 0
+        c = color_for_pct(pct)
+        bar = progress_bar(pct)
+        resets = time_until(seven_day_sonnet.get("resets_at"))
+        print(f"Week (Sonnet)    {bar} {pct:.0f}% | font=Menlo size=13 color={c}")
+        print(f"  Resets in {resets} | font=Menlo size=11 color=#444444")
+
+    # ── Dynamic bars for unknown usage categories ──
+    for key in unknown_keys:
+        bucket = data.get(key)
+        if not isinstance(bucket, dict) or "utilization" not in bucket:
+            continue
+        has_any = True
+        pct = bucket.get("utilization") or 0
+        c = color_for_pct(pct)
+        bar = progress_bar(pct)
+        resets = time_until(bucket.get("resets_at"))
+        label = _label_for_key(key)
+        print("---")
+        print(f"{label}{bar} {pct:.0f}% | font=Menlo size=13 color={c}")
+        print(f"  Resets in {resets} | font=Menlo size=11 color=#444444")
 
     # ── Extra Usage (if enabled) ──
     if extra.get("is_enabled"):
+        has_any = True
         print("---")
-        used_cents = extra.get("used_credits", 0)
-        limit_cents = extra.get("monthly_limit", 0)
+        used_cents = extra.get("used_credits") or 0
+        limit_cents = extra.get("monthly_limit") or 0
         used_dollars = used_cents / 100
         limit_dollars = limit_cents / 100
-        pct = extra.get("utilization", 0) or 0
+        pct = extra.get("utilization") or 0
         c = color_for_pct(pct)
         bar = progress_bar(pct)
-        print(f"Extra Usage      ${used_dollars:.2f} / ${limit_dollars:.2f} | font=Menlo size=13")
-        print(f"                 {bar} {pct:.0f}% | font=Menlo size=13 color={c}")
+        print(f"Extra Usage      {bar} {pct:.0f}% | font=Menlo size=13 color={c}")
+        print(f"  ${used_dollars:.2f} / ${limit_dollars:.2f} | font=Menlo size=11 color=#444444")
+
+    if not has_any:
+        print("No usage data available | color=#FF4444 font=Menlo size=13")
 
     # ── Display Mode (read-only, changed via standalone app) ──
     print("---")

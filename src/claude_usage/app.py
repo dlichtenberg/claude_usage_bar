@@ -7,6 +7,7 @@ import threading
 import traceback
 
 import rumps
+from AppKit import NSMenuItem
 from PyObjCTools import AppHelper
 
 from claude_usage.api import fetch_usage
@@ -58,6 +59,10 @@ class ClaudeUsageApp(rumps.App):
 
         self._extra_header = rumps.MenuItem("Extra Usage")
         self._extra_bar = rumps.MenuItem("  ...")
+
+        # Dynamic bars for usage categories discovered at runtime.
+        # Keyed by API field name → (main_item, reset_item, separator).
+        self._dynamic_bars: dict[str, tuple[rumps.MenuItem, rumps.MenuItem, object]] = {}
 
         # Display mode items
         self._mode_session = rumps.MenuItem(
@@ -319,17 +324,26 @@ class ClaudeUsageApp(rumps.App):
         self._extra_header._menuitem.setHidden_(True)
         self._extra_bar._menuitem.setHidden_(True)
 
+    # Top-level API keys we know how to render.
+    _KNOWN_KEYS = {"five_hour", "seven_day", "seven_day_sonnet", "extra_usage"}
+
     def _render(self, data):
         """Update all menu items from API response data."""
         self._last_data = data
+
+        # Identify unknown usage categories in the response.
+        unknown_keys = [k for k in data if k not in self._KNOWN_KEYS]
+        for key in unknown_keys:
+            if key not in self._dynamic_bars:
+                logger.info("New usage category in API response: %r", key)
 
         five_hour = data.get("five_hour") or {}
         seven_day = data.get("seven_day") or {}
         seven_day_sonnet = data.get("seven_day_sonnet") or {}
         extra = data.get("extra_usage") or {}
 
-        session_pct = five_hour.get("utilization", 0)
-        week_pct = seven_day.get("utilization", 0)
+        session_pct = five_hour.get("utilization") or 0
+        week_pct = seven_day.get("utilization") or 0
 
         # Menu bar title — depends on display mode
         self._set_merged_title(session_pct, week_pct)
@@ -337,55 +351,142 @@ class ClaudeUsageApp(rumps.App):
         # Only use fixed session/week colors in color_split mode
         use_split_colors = self._display_mode == MODE_COLOR_SPLIT
 
+        has_any = False
+
         # Session (5h)
-        self._style_limit(
-            self._session, self._session_reset,
-            "Session (5h)    ", five_hour,
-            color_override=SESSION_COLOR if use_split_colors else None,
-        )
+        if five_hour:
+            has_any = True
+            self._session._menuitem.setHidden_(False)
+            self._session_reset._menuitem.setHidden_(False)
+            self._style_limit(
+                self._session, self._session_reset,
+                "Session (5h)    ", five_hour,
+                color_override=SESSION_COLOR if use_split_colors else None,
+            )
+        else:
+            self._session._menuitem.setHidden_(True)
+            self._session_reset._menuitem.setHidden_(True)
 
         # Week (all)
-        self._style_limit(
-            self._week_all, self._week_all_reset,
-            "Week (all)      ", seven_day,
-            color_override=WEEK_COLOR if use_split_colors else None,
-        )
+        if seven_day:
+            has_any = True
+            self._week_all._menuitem.setHidden_(False)
+            self._week_all_reset._menuitem.setHidden_(False)
+            self._style_limit(
+                self._week_all, self._week_all_reset,
+                "Week (all)      ", seven_day,
+                color_override=WEEK_COLOR if use_split_colors else None,
+            )
+        else:
+            self._week_all._menuitem.setHidden_(True)
+            self._week_all_reset._menuitem.setHidden_(True)
 
         # Week (Sonnet)
-        self._style_limit(
-            self._week_sonnet, self._week_sonnet_reset,
-            "Week (Sonnet)   ", seven_day_sonnet,
-        )
+        if seven_day_sonnet:
+            has_any = True
+            self._week_sonnet._menuitem.setHidden_(False)
+            self._week_sonnet_reset._menuitem.setHidden_(False)
+            self._style_limit(
+                self._week_sonnet, self._week_sonnet_reset,
+                "Week (Sonnet)   ", seven_day_sonnet,
+            )
+        else:
+            self._week_sonnet._menuitem.setHidden_(True)
+            self._week_sonnet_reset._menuitem.setHidden_(True)
+
+        # Dynamic bars for unknown usage categories.
+        active_dynamic = set()
+        for key in unknown_keys:
+            bucket = data.get(key)
+            if not isinstance(bucket, dict) or "utilization" not in bucket:
+                continue
+            has_any = True
+            active_dynamic.add(key)
+            main, reset, sep = self._ensure_dynamic_bar(key)
+            sep.setHidden_(False)
+            main._menuitem.setHidden_(False)
+            reset._menuitem.setHidden_(False)
+            self._style_limit(
+                main, reset, self._label_for_key(key), bucket,
+            )
+
+        # Hide dynamic bars whose key disappeared from the response.
+        for key, (main, reset, sep) in self._dynamic_bars.items():
+            if key not in active_dynamic:
+                sep.setHidden_(True)
+                main._menuitem.setHidden_(True)
+                reset._menuitem.setHidden_(True)
 
         # Extra Usage
         if extra.get("is_enabled"):
+            has_any = True
             self._extra_header._menuitem.setHidden_(False)
             self._extra_bar._menuitem.setHidden_(False)
 
-            used_cents = extra.get("used_credits", 0)
-            limit_cents = extra.get("monthly_limit", 0)
+            used_cents = extra.get("used_credits") or 0
+            limit_cents = extra.get("monthly_limit") or 0
             used_dollars = used_cents / 100
             limit_dollars = limit_cents / 100
-            pct = extra.get("utilization", 0)
+            pct = extra.get("utilization") or 0
             c = color_hex_for_pct(pct)
-            bar = progress_bar(pct)
 
-            set_inert_title(
-                self._extra_header._menuitem,
-                styled_string(f"Extra Usage      ${used_dollars:.2f} / ${limit_dollars:.2f}"),
-            )
+            segments = [("Extra Usage      ", c, "Poppins")]
+            segments.extend(progress_bar_segments(pct, c))
+            segments.append((f" {pct:.0f}%", c))
+
+            set_inert_title(self._extra_header._menuitem, styled_segments(segments))
             set_inert_title(
                 self._extra_bar._menuitem,
-                styled_string(f"                 {bar} {pct:.0f}%", color=c),
+                styled_string(
+                    f"  ${used_dollars:.2f} / ${limit_dollars:.2f}",
+                    color="#444444", font_size=11.0,
+                ),
             )
         else:
             self._extra_header._menuitem.setHidden_(True)
             self._extra_bar._menuitem.setHidden_(True)
 
+        if not has_any:
+            self._show_error("No usage data available")
+
+    @staticmethod
+    def _label_for_key(key: str) -> str:
+        """Convert an API key like 'seven_day_opus' to a padded display label."""
+        if key.startswith("seven_day_"):
+            suffix = key[len("seven_day_"):].replace("_", " ").title()
+            label = f"Week ({suffix})"
+        elif key.startswith("five_hour_"):
+            suffix = key[len("five_hour_"):].replace("_", " ").title()
+            label = f"Session ({suffix})"
+        else:
+            label = key.replace("_", " ").title()
+        # Pad to 17 chars to align with existing labels.
+        return label.ljust(17)
+
+    def _ensure_dynamic_bar(self, key):
+        """Create menu items for an unknown usage bar, inserted before extra usage."""
+        if key in self._dynamic_bars:
+            return self._dynamic_bars[key]
+
+        main = rumps.MenuItem(f"_dyn_{key}")
+        reset = rumps.MenuItem(f"_dyn_{key}_reset")
+        sep = NSMenuItem.separatorItem()
+
+        # Insert into the NSMenu just before the extra_header item.
+        ns_menu = self._nsapp.nsstatusitem.menu()
+        idx = ns_menu.indexOfItem_(self._extra_header._menuitem)
+        # Insert in reverse order so they end up as: sep, main, reset.
+        ns_menu.insertItem_atIndex_(reset._menuitem, idx)
+        ns_menu.insertItem_atIndex_(main._menuitem, idx)
+        ns_menu.insertItem_atIndex_(sep, idx)
+
+        self._dynamic_bars[key] = (main, reset, sep)
+        return main, reset, sep
+
     def _style_limit(self, main_item, reset_item, label, bucket,
                      color_override=None):
         """Style a limit row (main line + reset line)."""
-        pct = bucket.get("utilization", 0)
+        pct = bucket.get("utilization") or 0
         c = color_override or color_hex_for_pct(pct)
         resets = time_until(bucket.get("resets_at"))
 
