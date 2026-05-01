@@ -63,6 +63,7 @@ class ClaudeUsageApp(rumps.App):
         # Dynamic bars for usage categories discovered at runtime.
         # Keyed by API field name → (main_item, reset_item, separator).
         self._dynamic_bars: dict[str, tuple[rumps.MenuItem, rumps.MenuItem, object]] = {}
+        self._logged_unknown_keys: set[str] = set()
 
         # Display mode items
         self._mode_session = rumps.MenuItem(
@@ -334,8 +335,11 @@ class ClaudeUsageApp(rumps.App):
         # Identify unknown usage categories in the response.
         unknown_keys = [k for k in data if k not in self._KNOWN_KEYS]
         for key in unknown_keys:
-            if key not in self._dynamic_bars:
-                logger.info("New usage category in API response: %r", key)
+            if key not in self._logged_unknown_keys:
+                bucket = data.get(key)
+                fields = sorted(bucket.keys()) if isinstance(bucket, dict) else type(bucket).__name__
+                logger.info("New usage category in API response: %r (fields=%s)", key, fields)
+                self._logged_unknown_keys.add(key)
 
         five_hour = data.get("five_hour") or {}
         seven_day = data.get("seven_day") or {}
